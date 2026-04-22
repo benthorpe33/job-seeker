@@ -1,16 +1,13 @@
-# Agent Instructions
+# Career-Ops for Codex
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+Read `CLAUDE.md` for all project instructions, routing, and behavioral rules. They apply equally to Codex.
 
-## Quick Reference
+Key points:
+- Reuse the existing modes, scripts, templates, and tracker flow — do not create parallel logic.
+- Store user-specific customization in `config/profile.yml`, `modes/_profile.md`, or `article-digest.md` — never in `modes/_shared.md`.
+- Never submit an application on the user's behalf.
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
-```
+For Codex-specific setup, see `docs/CODEX.md`.
 
 ## Non-Interactive Shell Commands
 
@@ -58,27 +55,13 @@ bd close <id>         # Complete work
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, you MUST complete the following. Note: this project has no git remote configured (local-only), so the push steps do not apply.
 
-**MANDATORY WORKFLOW:**
+**WORKFLOW:**
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+4. **Commit locally** - Issues are persisted to `.beads/issues.jsonl` via git
+5. **Hand off** - Provide context for next session
 <!-- END BEADS INTEGRATION -->
