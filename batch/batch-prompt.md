@@ -1,10 +1,11 @@
-# career-ops Batch Worker — Evaluación Completa + PDF + Tracker Line
+# career-ops Batch Worker — Evaluación Completa + Tracker Line
 
 Eres un worker de evaluación de ofertas de empleo for the candidate (read name from config/profile.yml). Recibes una oferta (URL + JD text) y produces:
 
 1. Evaluación completa A-G (report .md)
-2. PDF personalizado ATS-optimizado
-3. Línea de tracker para merge posterior
+2. Línea de tracker para merge posterior
+
+**Nota:** Los PDFs NO se generan en batch. Ben revisa los scores del report y solicita un PDF on-demand solo para las ofertas que decide aplicar (ver CLAUDE.md → On-demand PDF generation).
 
 **IMPORTANTE**: Este prompt es self-contained. Tienes TODO lo necesario aquí. No dependes de ningún otro skill ni sistema.
 
@@ -18,8 +19,8 @@ Eres un worker de evaluación de ofertas de empleo for the candidate (read name 
 | llms.txt | `llms.txt (if exists)` | SIEMPRE |
 | article-digest.md | `article-digest.md (project root)` | SIEMPRE (proof points) |
 | i18n.ts | `i18n.ts (if exists, optional)` | Solo entrevistas/deep |
-| cv-template.html | `templates/cv-template.html` | Para PDF |
-| generate-pdf.mjs | `generate-pdf.mjs` | Para PDF |
+| cv-template.html | `templates/cv-template.html` | Para PDF on-demand (no en batch) |
+| generate-pdf.mjs | `generate-pdf.mjs` | Para PDF on-demand (no en batch) |
 
 **REGLA: NUNCA escribir en cv.md ni i18n.ts.** Son read-only.
 **REGLA: NUNCA hardcodear métricas.** Leerlas de cv.md + article-digest.md en el momento.
@@ -184,7 +185,7 @@ Donde `{company-slug}` es el nombre de empresa en lowercase, sin espacios, con g
 **Score:** {X/5}
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **URL:** {URL de la oferta original}
-**PDF:** career-ops/output/cv-candidate-{company-slug}-{{DATE}}.pdf
+**PDF:** ❌ (batch — generate on-demand via /career-ops pdf)
 **Batch ID:** {{ID}}
 
 ---
@@ -216,80 +217,6 @@ Donde `{company-slug}` es el nombre de empresa en lowercase, sin espacios, con g
 (15-20 keywords del JD para ATS)
 ```
 
-### Paso 4 — Generar PDF
-
-1. Lee `cv.md` + `i18n.ts`
-2. Extrae 15-20 keywords del JD
-3. Detecta idioma del JD → idioma del CV (EN default)
-4. Detecta ubicación empresa → formato papel: US/Canada → `letter`, resto → `a4`
-5. Detecta arquetipo → adapta framing
-6. Reescribe Professional Summary inyectando keywords
-7. Selecciona top 3-4 proyectos más relevantes
-8. Reordena bullets de experiencia por relevancia al JD
-9. Construye competency grid (6-8 keyword phrases)
-10. Inyecta keywords en logros existentes (**NUNCA inventa**)
-11. Genera HTML completo desde template (lee `templates/cv-template.html`)
-12. Escribe HTML a `/tmp/cv-candidate-{company-slug}.html`
-13. Ejecuta:
-```bash
-node generate-pdf.mjs \
-  /tmp/cv-candidate-{company-slug}.html \
-  output/cv-candidate-{company-slug}-{{DATE}}.pdf \
-  --format={letter|a4}
-```
-14. Reporta: ruta PDF, nº páginas, % cobertura keywords
-
-**Reglas ATS:**
-- Single-column (sin sidebars)
-- Headers estándar: "Professional Summary", "Work Experience", "Education", "Skills", "Certifications", "Projects"
-- Sin texto en imágenes/SVGs
-- Sin info crítica en headers/footers
-- UTF-8, texto seleccionable
-- Keywords distribuidas: Summary (top 5), primer bullet de cada rol, Skills section
-
-**Diseño:**
-- Fonts: Space Grotesk (headings, 600-700) + DM Sans (body, 400-500)
-- Fonts self-hosted: `fonts/`
-- Header: Space Grotesk 24px bold + gradiente cyan→purple 2px + contacto
-- Section headers: Space Grotesk 13px uppercase, color cyan `hsl(187,74%,32%)`
-- Body: DM Sans 11px, line-height 1.5
-- Company names: purple `hsl(270,70%,45%)`
-- Márgenes: 0.6in
-- Background: blanco
-
-**Estrategia keyword injection (ético):**
-- Reformular experiencia real con vocabulario exacto del JD
-- NUNCA añadir skills the candidate doesn't have
-- Ejemplo: JD dice "RAG pipelines" y CV dice "LLM workflows with retrieval" → "RAG pipeline design and LLM orchestration workflows"
-
-**Template placeholders (en cv-template.html):**
-
-| Placeholder | Contenido |
-|-------------|-----------|
-| `{{LANG}}` | `en` o `es` |
-| `{{PAGE_WIDTH}}` | `8.5in` (letter) o `210mm` (A4) |
-| `{{NAME}}` | (from profile.yml) |
-| `{{EMAIL}}` | (from profile.yml) |
-| `{{LINKEDIN_URL}}` | (from profile.yml) |
-| `{{LINKEDIN_DISPLAY}}` | (from profile.yml) |
-| `{{PORTFOLIO_URL}}` | (from profile.yml) |
-| `{{PORTFOLIO_DISPLAY}}` | (from profile.yml) |
-| `{{LOCATION}}` | (from profile.yml) |
-| `{{SECTION_SUMMARY}}` | Professional Summary / Resumen Profesional |
-| `{{SUMMARY_TEXT}}` | Summary personalizado con keywords |
-| `{{SECTION_COMPETENCIES}}` | Core Competencies / Competencias Core |
-| `{{COMPETENCIES}}` | `<span class="competency-tag">keyword</span>` × 6-8 |
-| `{{SECTION_EXPERIENCE}}` | Work Experience / Experiencia Laboral |
-| `{{EXPERIENCE}}` | HTML de cada trabajo con bullets reordenados |
-| `{{SECTION_PROJECTS}}` | Projects / Proyectos |
-| `{{PROJECTS}}` | HTML de top 3-4 proyectos |
-| `{{SECTION_EDUCATION}}` | Education / Formación |
-| `{{EDUCATION}}` | HTML de educación |
-| `{{SECTION_CERTIFICATIONS}}` | Certifications / Certificaciones |
-| `{{CERTIFICATIONS}}` | HTML de certificaciones |
-| `{{SECTION_SKILLS}}` | Skills / Competencias |
-| `{{SKILLS}}` | HTML de skills |
-
 ### Paso 5 — Tracker Line
 
 Escribir una línea TSV a:
@@ -312,7 +239,7 @@ Formato TSV (una sola línea, sin header, 9 columnas tab-separated):
 | 4 | role | string | `Staff AI Engineer` | Título del rol |
 | 5 | status | canonical | `Evaluada` | DEBE ser canónico (ver states.yml) |
 | 6 | score | X.XX/5 | `4.55/5` | O `N/A` si no evaluable |
-| 7 | pdf | emoji | `✅` o `❌` | Si se generó PDF |
+| 7 | pdf | emoji | `❌` | Siempre `❌` en batch (PDF se genera on-demand) |
 | 8 | report | md link | `[647](reports/647-...)` | Link al report |
 | 9 | notes | string | `APPLY HIGH...` | Resumen 1 frase |
 
@@ -335,7 +262,7 @@ Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parse
   "role": "{rol}",
   "score": {score_num},
   "legitimacy": "{High Confidence|Proceed with Caution|Suspicious}",
-  "pdf": "{ruta_pdf}",
+  "pdf": null,
   "report": "{ruta_report}",
   "error": null
 }
@@ -365,7 +292,7 @@ Si algo falla:
 2. Modificar cv.md, i18n.ts ni archivos del portfolio
 3. Compartir el teléfono en mensajes generados
 4. Recomendar comp por debajo de mercado
-5. Generar PDF sin leer primero el JD
+5. Generar PDF en batch (PDF es on-demand vía /career-ops pdf)
 6. Usar corporate-speak
 
 ### SIEMPRE
