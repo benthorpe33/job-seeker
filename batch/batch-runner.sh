@@ -374,8 +374,8 @@ process_offer() {
     fi
 
     # Check min-score gate
-    if [[ "$score" != "-" && -n "$score" ]] && (( $(echo "$MIN_SCORE > 0" | bc -l) )); then
-      if (( $(echo "$score < $MIN_SCORE" | bc -l) )); then
+    if [[ "$score" != "-" && -n "$score" ]] && awk "BEGIN{exit!($MIN_SCORE>0)}"; then
+      if awk "BEGIN{exit!($score+0 < $MIN_SCORE+0)}"; then
         update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries"
         echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
         continue
