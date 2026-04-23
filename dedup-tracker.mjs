@@ -7,6 +7,39 @@
  * preserves that status. Merges notes.
  *
  * Run: node career-ops/dedup-tracker.mjs [--dry-run]
+ *
+ * ⚠️  KNOWN LIMITATIONS — ALWAYS review --dry-run output before applying.
+ *
+ * The script dedups on normalized company + fuzzy role match (≥2 shared
+ * non-stopword tokens, ≥60% overlap ratio of the shorter role). It does
+ * NOT inspect the report URL, so it has high false-positive rates when a
+ * company has multiple adjacent but distinct reqs. Confirmed false
+ * positives observed 2026-04-23:
+ *
+ *   - "Partner Solutions Architect" vs "Solutions Architect" (Glean)
+ *     → different reqs (enterprise/partner vs post-sale), different URLs
+ *   - "Data Scientist, Core Data - PhD (2026)" vs "Data Scientist" (Figma)
+ *     → PhD cohort vs general DS, different URLs
+ *   - "Forward Deployed Banker" vs "Forward Deployed Investor" (Hebbia)
+ *     → different roles despite fuzzy-matching on "forward deployed"
+ *   - "Applied AI Engineer (Digital Natives Business)" vs
+ *     "Forward Deployed Engineer, Applied AI (Digital Natives)" (Anthropic)
+ *     → two different Anthropic reqs with different job IDs (5057647008
+ *       vs 4985877008); report 051 explicitly notes they're distinct
+ *
+ * True duplicates (same URL, same req evaluated twice) DO get collapsed
+ * correctly — that is the script's real use case.
+ *
+ * Recommended usage:
+ *   1. Run `node dedup-tracker.mjs --dry-run`
+ *   2. For each proposed removal, open the two reports and compare the
+ *      `**URL:**` header lines. If URLs differ → do NOT remove.
+ *   3. Manually edit applications.md for the true-duplicate rows and
+ *      skip running this script without --dry-run.
+ *
+ * Tightening idea (not yet implemented): read report files, extract
+ * `**URL:**`, only collapse when URLs match OR (company+role match AND
+ * report numbers differ by ≤N meaning a near-in-time re-eval).
  */
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
