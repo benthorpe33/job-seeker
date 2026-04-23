@@ -1,43 +1,8 @@
-# Pipeline (Top 50 — Phase 5 batch 1)
+# Pipeline
 
 ## Pendientes
 
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/5192805008 | Anthropic | Solutions Architect, Applied AI (Commercial)| San Francisco, CA | New York City, NY
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/5057258008 | Anthropic | Solutions Architect, Applied AI (Startups)| San Francisco, CA | New York City, NY
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/5017903008 | Anthropic | Technical Deployment, Applied AI| Austin, TX; Boston, MA; New York City, NY; San Francisco, CA; Seattle, WA
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/4985877008 | Anthropic | Forward Deployed Engineer, Applied AI| Boston, MA; Chicago, IL; New York City, NY | Seattle, WA; San Francisco, CA | New York City, NY; Washington, DC
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/5186067008 | Anthropic | Full-Stack Software Engineer, Reinforcement Learning| San Francisco, CA | New York City, NY
-- [ ] https://job-boards.greenhouse.io/anthropic/jobs/5174743008 | Anthropic | Software Engineer, Full-stack| San Francisco, CA | New York City, NY | Seattle, WA
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/4759347008 | Cresta | Senior Forward Deployed Engineer (AI Agent)| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/gleanwork/jobs/4651991005 | Glean | Founding Forward Deployed Engineer| Remote - US
-- [ ] https://job-boards.greenhouse.io/hebbia/jobs/4683103005 | Hebbia | Forward Deployed Banker (AI Strategist)| London, UK; New York City
-- [ ] https://job-boards.greenhouse.io/hebbia/jobs/4683104005 | Hebbia | Forward Deployed Investor (AI Strategist)| London, UK; New York City
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/4741283008 | Cresta | Senior Machine Learning Engineer| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/5155675008 | Cresta | Senior Machine Learning Engineer - Automatic Speech Recognition (ASR)| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/mercury/jobs/5639559004 | Mercury | Senior Machine Learning Engineer| San Francisco, CA, New York, NY, Portland, OR, or Remote within Canada or United States
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/4906900008 | Cresta | Enterprise Solutions Engineer| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/4964429008 | Cresta | Senior Solutions Architect| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/4985070008 | Cresta | Strategic Solutions Engineer, East| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/gleanwork/jobs/4663045005 | Glean | Partner Solutions Architect| Remote - US
-- [ ] https://job-boards.greenhouse.io/gleanwork/jobs/4508312005 | Glean | Solutions Architect| Remote - US
-- [ ] https://job-boards.greenhouse.io/gleanwork/jobs/4620264005 | Glean | Strategic Solutions Engineer, East| Remote - US
-- [ ] https://job-boards.greenhouse.io/hebbia/jobs/4556367005 | Hebbia | Solutions Engineer| New York City
-- [ ] https://job-boards.greenhouse.io/mercury/jobs/5888354004 | Mercury | AI Solutions Architect| San Francisco, CA, New York, NY, Portland, OR, or Remote within Canada or United States
-- [ ] https://boards.greenhouse.io/figma/jobs/5552580004?gh_jid=5552580004 | Figma | Data Scientist| San Francisco, CA • New York, NY • United States
-- [ ] https://job-boards.greenhouse.io/mercury/jobs/5799320004 | Mercury | Senior Data Scientist - Banking| San Francisco, CA, New York, NY, Portland, OR, or Remote within Canada or United States
-- [ ] https://www.brex.com/careers/8472634002?gh_jid=8472634002 | Brex | Senior Software Engineer, Full Stack| New York, New York, United States
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/5133464008 | Cresta | Senior Software Engineer, Backend (AI Agent)| United States (Remote)
-- [ ] https://job-boards.greenhouse.io/cresta/jobs/5026013008 | Cresta | Senior Full Stack Engineer - Conversation Intelligence| United States (Remote)
-- [ ] https://boards.greenhouse.io/figma/jobs/5691911004?gh_jid=5691911004 | Figma | Software Engineer, Full Stack| San Francisco, CA • New York, NY • United States
-- [ ] https://job-boards.greenhouse.io/mercury/jobs/5493086004 | Mercury | Senior Full-Stack Engineer| San Francisco, CA, New York, NY, Portland, OR, or Remote within Canada or United States
-- [ ] https://job-boards.greenhouse.io/mercury/jobs/5850044004 | Mercury | Senior Software Engineer - AI Engineering| San Francisco, CA, New York, NY, Portland, OR, or Remote within Canada or United States
-- [ ] https://boards.greenhouse.io/figma/jobs/5707966004?gh_jid=5707966004 | Figma | AI Applied Scientist| San Francisco, CA • New York, NY • United States
-- [ ] https://job-boards.greenhouse.io/fireworksai/jobs/4059100009 | Fireworks AI | Solutions Architect| New York, NY; San Mateo, CA
-- [ ] https://jobs.ashbyhq.com/modal/af17da5e-23ca-4802-854d-5f0546e1ed32 | Modal | Member of Technical Staff - ML Performance| New York
-- [ ] https://jobs.ashbyhq.com/langchain/25d40647-c821-46ff-bf25-bacf21fa38b5 | LangChain | Deployed Engineer (NYC)| New York, NY
-- [ ] https://job-boards.greenhouse.io/vercel/jobs/5872425004 | Vercel | Forward Deployed Engineer, v0| Remote - United States
-- [ ] https://job-boards.greenhouse.io/vercel/jobs/5752684004 | Vercel | Forward-Deployed Engineer| Hybrid - San Francisco, New York City, Austin
-- [ ] https://jobs.ashbyhq.com/langchain/f71210f9-12e1-4726-88b9-ebafa194d5b2 | LangChain | Solutions Architect (NYC)| New York, NY
-- [ ] https://jobs.ashbyhq.com/langchain/0a5dd30c-6da1-4095-bd96-b16f27eeb333 | LangChain | Solutions Architect (Remote)| Remote-Utah
-- [ ] https://job-boards.greenhouse.io/vercel/jobs/5553789004 | Vercel | Senior Partner Solutions Engineer| Hybrid - San Francisco, New York City, Austin
-- [ ] https://job-boards.greenhouse.io/vercel/jobs/5806749004 | Vercel | Solutions Architect| Hybrid - San Francisco, New York City, Austin
+- [ ] https://job-boards.greenhouse.io/anthropic/jobs/4985877008 | Anthropic | Forward Deployed Engineer, Applied AI | Boston, MA; Chicago, IL; New York City, NY | Seattle, WA; San Francisco, CA | New York City, NY; Washington, DC
+- [ ] https://job-boards.greenhouse.io/cresta/jobs/5026013008 | Cresta | Senior Full Stack Engineer - Conversation Intelligence | United States (Remote)
+- [ ] https://boards.greenhouse.io/figma/jobs/5976930004?gh_jid=5976930004 | Figma | Data Scientist, Core Data -  PhD (2026) | New York, NY • United States; San Francisco, CA • New York, NY
+- [ ] https://jobs.ashbyhq.com/decagon/73ef8e9d-a6b3-4817-ab02-893c4ac72bad | Decagon | Senior Solutions Engineer | New York City

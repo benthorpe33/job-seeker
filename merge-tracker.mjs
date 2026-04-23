@@ -71,11 +71,41 @@ function normalizeCompany(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Generic stopwords that don't distinguish roles (present in many JD titles).
+// Filtered out before counting overlap so "Anthropic Applied AI X" vs
+// "Anthropic Applied AI Y" doesn't falsely collapse.
+const ROLE_STOPWORDS = new Set([
+  'senior', 'staff', 'principal', 'junior', 'lead',
+  'engineer', 'engineering', 'scientist', 'architect', 'developer',
+  'software', 'technical', 'applied', 'member',
+]);
+
+function normalizeRole(s) {
+  return s.toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')      // drop parenthetical qualifiers
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !ROLE_STOPWORDS.has(w))
+    .sort()
+    .join(' ');
+}
+
 function roleFuzzyMatch(a, b) {
-  const wordsA = a.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-  const wordsB = b.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-  const overlap = wordsA.filter(w => wordsB.some(wb => wb.includes(w) || w.includes(wb)));
-  return overlap.length >= 2;
+  const normA = normalizeRole(a);
+  const normB = normalizeRole(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  // Require meaningful overlap on NON-stopword tokens.
+  const tokensA = new Set(normA.split(' '));
+  const tokensB = new Set(normB.split(' '));
+  const overlap = [...tokensA].filter(t => tokensB.has(t));
+  const minSize = Math.min(tokensA.size, tokensB.size);
+  // ≥3 shared meaningful tokens, or all tokens of the shorter side shared
+  // when the shorter side has ≥2 tokens.
+  if (overlap.length >= 3) return true;
+  if (minSize >= 2 && overlap.length === minSize) return true;
+  return false;
 }
 
 function extractReportNum(reportStr) {
@@ -239,13 +269,18 @@ for (const file of tsvFiles) {
   if (!addition) { skipped++; continue; }
 
   // Check for duplicate by:
-  // 1. Exact report number match
-  // 2. Company + role fuzzy match
+  // 1. Exact report number match (authoritative — the report IS the record)
+  // 2. Company + role fuzzy match (normalized role equality or ≥3 shared
+  //    non-stopword tokens; see roleFuzzyMatch above)
+  //
+  // NOTE: We intentionally do NOT match on addition.num === app.num. The TSV's
+  // `num` column is not a tracker sequence number — batch workers write the
+  // report number there. Using it as a sequence match caused row-clobbering
+  // (e.g. worker id=52 overwriting unrelated tracker row #52).
   const reportNum = extractReportNum(addition.report);
   let duplicate = null;
 
   if (reportNum) {
-    // Check if this report number already exists
     duplicate = existingApps.find(app => {
       const existingReportNum = extractReportNum(app.report);
       return existingReportNum === reportNum;
@@ -253,12 +288,6 @@ for (const file of tsvFiles) {
   }
 
   if (!duplicate) {
-    // Exact entry number match
-    duplicate = existingApps.find(app => app.num === addition.num);
-  }
-
-  if (!duplicate) {
-    // Company + role fuzzy match
     const normCompany = normalizeCompany(addition.company);
     duplicate = existingApps.find(app => {
       if (normalizeCompany(app.company) !== normCompany) return false;
@@ -283,9 +312,9 @@ for (const file of tsvFiles) {
       skipped++;
     }
   } else {
-    // New entry — use the number from the TSV
-    const entryNum = addition.num > maxNum ? addition.num : ++maxNum;
-    if (addition.num > maxNum) maxNum = addition.num;
+    // New entry — assign next sequential tracker number.
+    // Ignore addition.num (it's a report number, not a tracker sequence).
+    const entryNum = ++maxNum;
 
     const newLine = `| ${entryNum} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${addition.status} | ${addition.pdf} | ${addition.report} | ${addition.notes} |`;
     newLines.push(newLine);
