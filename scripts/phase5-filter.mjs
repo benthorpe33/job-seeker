@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Phase 5 option-3 pre-filter: drop non-US locations + obvious title excludes.
-// Re-fetches ATS APIs (no LLM cost) to build url->location map for every
-// pending URL in data/pipeline.md, then rewrites pipeline.md with only
-// US-eligible + target-title postings.
+// Phase 5 pre-filter: drop non-US locations, title excludes, SA/SE-in-sales-org,
+// sub-$125K base comp, and JD-body signals (seniority ≥5yr, product-SWE-no-AI,
+// finance domain-expert, low-level infra, ASR/speech).
+// Re-fetches ATS APIs (zero LLM cost) to build url→info map, then rewrites
+// pipeline.md with only postings that clear every filter.
+//
+// CLI flags:
+//   --max-age-days=N  Drop postings with updated_at / publishedAt older than
+//                     N days. Default: no age cutoff (all ages pass).
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import yaml from 'js-yaml';
@@ -12,8 +17,54 @@ const PORTALS_PATH = 'portals.yml';
 const PIPELINE_PATH = 'data/pipeline.md';
 const FETCH_TIMEOUT_MS = 30000;
 const CONCURRENCY = 8;
+const COMP_FLOOR = 125000;
 
-// ── Copy of scan.mjs parsers so we stay in sync behaviorally ──
+// ── CLI flags ─────────────────────────────────────────────────────────
+let maxAgeDays = null;
+for (const a of process.argv.slice(2)) {
+  const m = a.match(/^--max-age-days=(\d+)$/);
+  if (m) maxAgeDays = parseInt(m[1], 10);
+}
+
+// ── HTML strip utility (for Greenhouse content field) ────────────────
+// Greenhouse returns content as HTML-entity-encoded HTML (e.g. `&lt;p&gt;`),
+// so we iterate the entity decode before stripping tags.
+function decodeEntitiesOnce(s) {
+  return s
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&rsquo;|&lsquo;|&apos;|&#39;/gi, "'")
+    .replace(/&rdquo;|&ldquo;/gi, '"')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&amp;/gi, '&');
+}
+function stripHtml(s) {
+  if (!s) return '';
+  let t = s;
+  for (let i = 0; i < 2; i++) t = decodeEntitiesOnce(t);
+  return t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Ashby compensation parser — schema varies; try known structures.
+function extractAshbyMinBase(comp) {
+  if (!comp) return null;
+  const sc = comp.summaryComponents;
+  if (Array.isArray(sc)) {
+    for (const c of sc) {
+      const label = (c.label || '').toLowerCase();
+      const type = (c.compensationType || '').toLowerCase();
+      const isBase = type === 'salary' || /base|salary/.test(label);
+      const min = typeof c.minValue === 'number' ? c.minValue : (typeof c.min === 'number' ? c.min : null);
+      if (isBase && typeof min === 'number' && min >= 1000 && min < 1e7) return min;
+    }
+  }
+  if (typeof comp.minBaseSalary === 'number') return comp.minBaseSalary;
+  return null;
+}
+
+// ── ATS parsers (extended from scan.mjs baseline) ────────────────────
 function parseGreenhouse(json, companyName) {
   return (json.jobs || []).map(j => ({
     title: j.title || '',
@@ -21,6 +72,9 @@ function parseGreenhouse(json, companyName) {
     company: companyName,
     location: j.location?.name || '',
     postedAt: j.updated_at || null,
+    department: (j.departments || []).map(d => d.name).filter(Boolean).join('; '),
+    body: stripHtml(j.content || ''),
+    minBaseSalary: null,
   }));
 }
 function parseAshby(json, companyName) {
@@ -30,6 +84,9 @@ function parseAshby(json, companyName) {
     company: companyName,
     location: j.location || '',
     postedAt: j.publishedAt || null,
+    department: j.departmentName || '',
+    body: j.descriptionPlain || '',
+    minBaseSalary: extractAshbyMinBase(j.compensation),
   }));
 }
 function parseLever(json, companyName) {
@@ -39,13 +96,22 @@ function parseLever(json, companyName) {
     url: j.hostedUrl || '',
     company: companyName,
     location: j.categories?.location || '',
+    postedAt: j.createdAt ? new Date(j.createdAt).toISOString() : null,
+    department: j.categories?.department || '',
+    body: j.descriptionPlain || '',
+    minBaseSalary: null,
   }));
 }
 const PARSERS = { greenhouse: parseGreenhouse, ashby: parseAshby, lever: parseLever };
 
 function detectApi(company) {
+  // Append ?content=true for Greenhouse so the board response includes JD text
+  // (saves an N-per-job second pass).
+  const withGhContent = (url) => url.includes('content=true')
+    ? url
+    : url + (url.includes('?') ? '&' : '?') + 'content=true';
   if (company.api && company.api.includes('greenhouse')) {
-    return { type: 'greenhouse', url: company.api };
+    return { type: 'greenhouse', url: withGhContent(company.api) };
   }
   const url = company.careers_url || '';
   const ashbyMatch = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)/);
@@ -58,7 +124,7 @@ function detectApi(company) {
   }
   const ghEuMatch = url.match(/job-boards(?:\.eu)?\.greenhouse\.io\/([^/?#]+)/);
   if (ghEuMatch && !company.api) {
-    return { type: 'greenhouse', url: `https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs` };
+    return { type: 'greenhouse', url: withGhContent(`https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`) };
   }
   return null;
 }
@@ -92,25 +158,14 @@ const NON_US_PATTERNS = [
   'buenos aires','argentina','lima','peru','bogota','colombia','santiago','chile'
 ];
 
-// Ben is Manhattan-based. Keep only:
-//   1. postings that mention NYC / New York / Manhattan / Brooklyn, OR
-//   2. US-remote postings (remote/anywhere paired with US signal), OR
-//   3. blank location (let eval decide).
-// Drop everything else — SF-only, Seattle-only, Austin-only, DC-only etc.
 function isUsEligible(loc) {
   if (!loc) return true;
   const lower = loc.toLowerCase();
-
-  // Reject non-US first
   const hasNonUs = NON_US_PATTERNS.some(p => lower.includes(p));
   const nycTokens = ['new york','nyc','manhattan','brooklyn',' ny,',' ny;',' ny ',' ny)','ny,','ny;'];
   const hasNyc = nycTokens.some(t => lower.includes(t));
-
-  // NYC overrides non-US flag (dual-location "London; NYC" keeps)
   if (hasNyc) return true;
   if (hasNonUs) return false;
-
-  // US-remote variants — plain substring checks
   const remoteSubstrings = [
     'us-remote','us remote','remote - us','remote, us','remote us',
     'remote (us','remote (united','united states (remote',
@@ -118,44 +173,24 @@ function isUsEligible(loc) {
     'north america','n. america','remote within the u',
   ];
   if (remoteSubstrings.some(t => lower.includes(t))) return true;
-
-  // Pure "Remote" / "Anywhere" with no other qualifier → treat as US-remote
   if (/^(remote|anywhere|fully remote)\b/.test(lower.trim())) return true;
-
-  // Everything else (SF-only, Seattle-only, etc.) → drop
   return false;
 }
 
-// Title excludes — Director/VP levels, PhD-mandatory research, pure robotics hardware,
-// security-clearance-required public sector, sales/marketing/recruiter roles.
 // Title excludes per Ben's CLAUDE.md hard excludes + archetype priority.
-// Drops Director/VP, pure research (PhD-track), business/growth/revenue/finance DS,
-// IT/support/security-ops, hardware, sales/marketing/recruiting.
 const TITLE_EXCLUDES = [
-  // Seniority excludes — IC-only, no leadership/management
   / director /i, / director,/i, /^director[, ]/i, /, director/i,
   /\bvp[, ]/i, /vice president/i, /\bsvp\b/i, /\bevp\b/i,
   /head of /i, /chief .* officer/i,
-  // Manager: drop unless "Member of Technical Staff" (MTS is an IC title at labs)
   /\bmanager\b/i,
-  // Staff / Staff+ / Senior Staff etc. — too senior for Ben
-  /\bstaff\+?\b(?! engineer)/i,  // catches "Staff+", "Staff Research Engineer"
-  /\bstaff\b/i,                   // broad — covers "Staff Software Engineer" etc.
+  /\bstaff\+?\b(?! engineer)/i,
+  /\bstaff\b/i,
   /\bsenior staff\b/i, /\bprincipal\b/i,
-  // Leader / Lead (when it implies people management, not tech lead IC)
   /\bleader\b/i, /\blead,? /i, /^lead /i, / lead$/i, /, lead\b/i,
-  // Exception carve-out: "Member of Technical Staff" is IC, keep it. Since
-  // the /\bstaff\b/ rule above would drop it, reintroduce it in the allow-list
-  // via a second pass (see titleAllowed below).
-
-  // Research excludes (PhD-track, not product-leaning)
   /^research scientist\b/i, /, research scientist\b/i,
   /research engineer\s*\/\s*research scientist/i,
   /research scientist\s*\/\s*research engineer/i,
-  // Pure research without "Applied" qualifier — drop pretraining/post-training/RL research IC roles
   /research engineer,? (pretraining|post-training|rl|reasoning|alignment|safety|privacy|retrieval|codex|frontier evals|science of scaling|production model|machine learning)/i,
-
-  // Security / gov / clearance
   /clearance/i, /ts\/sci/i, /federal civilian/i, /public sector/i,
   /offensive security/i, /security research/i,
   /\bgov\b/i, /, gov/i, / - gov/i,
@@ -164,12 +199,8 @@ const TITLE_EXCLUDES = [
   /, federal\b/i, / - federal\b/i, /\bfederal$/i,
   /\bsecurity architect\b/i, /\bsecurity engineer\b/i,
   /\bsafeguards\b/i, /\bsafeguards labs\b/i,
-
-  // Not engineering / product DS
   /\bevangelist\b/i,
   /\bsupport operations\b/i,
-
-  // Business / finance / growth / revenue / GTM / operations
   /data scientist,? (strategic finance|strategic intelligence|financial engineering|business|support|integrity|safety systems|unit economics|platform and b2b|codex)/i,
   /\bstrategic finance\b/i, /\bfinancial engineering\b/i, /\bunit economics\b/i,
   /\bstrategic intelligence\b/i, /\brisk\b.*data scientist/i,
@@ -178,8 +209,6 @@ const TITLE_EXCLUDES = [
   /\bfleet scheduling\b/i, /\bdata acquisition\b/i,
   /\bsocial products\b/i, /\bchatgpt enterprise\b/i,
   /\bb2b applications\b/i,
-
-  // Sales / marketing / HR / admin
   /recruiter/i, /talent acquisition/i,
   /account executive/i, /\bsales\b/i, /sales development/i,
   /\bsales engineer\b/i,
@@ -190,21 +219,103 @@ const TITLE_EXCLUDES = [
   /\btechnical account manager\b/i,
   /\brevenue operations\b/i, /\brevops\b/i,
   /\bpartnerships?\b/i,
-
-  // IT / support / corporate
   /\bit solutions engineer\b/i, /\bit support\b/i, /\bsystems administrator\b/i,
   /helpdesk/i, /desktop support/i,
-
-  // Hardware / infra non-ML
   /hardware engineer/i, /mechanical engineer/i, /electrical engineer/i,
-  /site reliability/i, /\bsre\b/i, // your archetype doesn't include SRE
+  /site reliability/i, /\bsre\b/i,
 ];
 function titleAllowed(title) {
-  // Allow-list: "Member of Technical Staff" is the standard IC title at frontier
-  // labs (Anthropic, Cohere, Perplexity, Fireworks, etc.) — keep even though
-  // the word "Staff" would otherwise be excluded.
   if (/\bmember of technical staff\b/i.test(title)) return true;
   return !TITLE_EXCLUDES.some(re => re.test(title));
+}
+
+// ── New predicates ───────────────────────────────────────────────────
+// Layer B: department filter. Only drop when the title looks SA/SE-adjacent
+// AND the dept is in a sales/GTM/finance org. Protects Cresta-FDE-in-Delivery
+// false-negatives where FDE titles sit in non-sales orgs.
+const SA_SE_LIKE_TITLE = /solutions (architect|engineer|consultant)|partner solutions|field engineer|ai strategist/i;
+// "AI Strategy" catches Hebbia's domain-expert FDE/Strategist roles;
+// "Customer Outcomes" catches Glean's post-sales SA org. Both are only
+// consulted when the title also looks SA/SE-like, so technical engineers
+// who happen to sit in these orgs aren't dropped.
+const SALES_ADJACENT_DEPT = /\b(sales|go[- ]?to[- ]?market|gtm|customer (success|outcomes|operations)|field engineering|partnerships?|revenue|business development|finance|banking|ai strategy|post[- ]sales)\b/i;
+
+function departmentAllowed(title, dept) {
+  if (!dept) return { ok: true };
+  if (SA_SE_LIKE_TITLE.test(title) && SALES_ADJACENT_DEPT.test(dept)) {
+    return { ok: false, signal: `dept=${dept}` };
+  }
+  return { ok: true };
+}
+
+// Layer D: comp floor. Only applies when we have a confirmed number.
+function compAllowed(minBase) {
+  if (typeof minBase !== 'number') return { ok: true };
+  if (minBase < COMP_FLOOR) {
+    return { ok: false, signal: `$${minBase.toLocaleString()}` };
+  }
+  return { ok: true };
+}
+
+// Layer C: JD body regex predicates.
+function extractMinYears(body) {
+  if (!body) return 0;
+  let maxY = 0;
+  const patA = /(\d+)\+?\s*years?\s+(?:of\s+)?(?:relevant\s+|prior\s+|professional\s+|industry\s+|work\s+|total\s+|hands[- ]?on\s+)?(?:experience|exp\b|working\s+in|in\s+[a-z])/gi;
+  const patB = /(?:minimum|at\s+least|required:?|requires)\s+(?:of\s+)?(\d+)\+?\s*years?/gi;
+  for (const pat of [patA, patB]) {
+    for (const m of body.matchAll(pat)) {
+      const n = parseInt(m[1], 10);
+      if (n > maxY && n <= 15) maxY = n;
+    }
+  }
+  return maxY;
+}
+
+const PRODUCT_SWE_TITLE = /^(senior\s+)?(software engineer|full[- ]?stack(\s+software)?\s+engineer)(\b|,|$)/i;
+const AI_KEYWORDS = /\b(LLMs?|\bML\b|machine learning|model training|model inference|model serving|embeddings?|\bRAG\b|fine[- ]?tun(e|ing)|prompt engineering|transformer|neural net|\bAI\/ML\b|AI\s+(engineer|system)|generative ai|agents?|claude|gpt-?\d|openai|anthropic)\b/i;
+
+const FINANCE_EXPERT = [
+  /ex[- ]banker/i,
+  /investment banking (background|experience|required)/i,
+  /former (analyst|associate|vp|banker) at\b/i,
+  /ex[- ]lawyer/i,
+  /corporate law (required|background)/i,
+  /\bm&a\b.*(advisory|experience|required)/i,
+  /former (investor|investment)/i,
+  /buy[- ]?side (experience|background|required)/i,
+  /private equity (background|experience)/i,
+  /hedge fund (background|experience)/i,
+];
+const INFRA_TERMS = [
+  /\bCUDA\b/i, /\bvLLM\b/i, /\bTensorRT\b/i, /\bFlashAttention\b/i, /\btriton\b/i,
+  /kernel (optimi|fusi)/i, /GPU memory/i, /\bquantization\b/i, /\btensor parallel/i,
+  /speculative decoding/i,
+];
+const INFRA_TITLE = /(performance|systems|infrastructure|\bplatform\b)/i;
+const ASR_PATTERN = /\b(ASR|automatic speech recognition|speech[- ]to[- ]text|speech recognition|speech models?)\b/i;
+
+function jdBodyAllowed(title, body) {
+  const yrs = extractMinYears(body);
+  if (yrs >= 5) return { ok: false, signal: `min ${yrs}yr` };
+
+  if (PRODUCT_SWE_TITLE.test(title) && body && !AI_KEYWORDS.test(body)) {
+    return { ok: false, signal: 'product-SWE-no-AI' };
+  }
+
+  const financeHits = FINANCE_EXPERT.filter(r => r.test(body)).length;
+  if (financeHits >= 2) return { ok: false, signal: `finance-expert(${financeHits})` };
+
+  const infraHits = INFRA_TERMS.filter(r => r.test(body)).length;
+  if (infraHits >= 3 && INFRA_TITLE.test(title)) {
+    return { ok: false, signal: `low-level-infra(${infraHits})` };
+  }
+
+  if (ASR_PATTERN.test(title) || (body && ASR_PATTERN.test(body.slice(0, 500)))) {
+    return { ok: false, signal: 'asr/speech' };
+  }
+
+  return { ok: true };
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -216,10 +327,12 @@ async function main() {
     .filter(c => c._api !== null);
 
   console.log(`Fetching ${companies.length} company APIs…`);
-  const locMap = new Map(); // url -> {location, title, company}
+  if (maxAgeDays !== null) {
+    console.log(`  --max-age-days=${maxAgeDays} (will drop postings older than that)`);
+  }
+  const locMap = new Map();
   let fetchOk = 0, fetchFail = 0;
 
-  // Concurrent fetch
   let idx = 0;
   async function worker() {
     while (idx < companies.length) {
@@ -227,7 +340,17 @@ async function main() {
       try {
         const json = await fetchJson(c._api.url);
         const offers = PARSERS[c._api.type](json, c.name);
-        for (const o of offers) locMap.set(o.url, { location: o.location, title: o.title, company: o.company, postedAt: o.postedAt || null });
+        for (const o of offers) {
+          locMap.set(o.url, {
+            location: o.location,
+            title: o.title,
+            company: o.company,
+            postedAt: o.postedAt || null,
+            department: o.department || '',
+            body: o.body || '',
+            minBaseSalary: o.minBaseSalary,
+          });
+        }
         fetchOk++;
       } catch (e) {
         fetchFail++;
@@ -236,12 +359,12 @@ async function main() {
     }
   }
   await Promise.all(Array.from({length: CONCURRENCY}, worker));
-  console.log(`  ${fetchOk} ok, ${fetchFail} failed. ${locMap.size} URL→location entries.`);
+  console.log(`  ${fetchOk} ok, ${fetchFail} failed. ${locMap.size} URL→info entries.`);
 
-  const CUTOFF_DAYS = 14;
-  const cutoff = new Date(Date.now() - CUTOFF_DAYS * 24 * 60 * 60 * 1000);
+  const cutoff = maxAgeDays !== null
+    ? new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000)
+    : null;
 
-  // Parse pipeline.md
   const pipelineText = readFileSync(PIPELINE_PATH, 'utf-8');
   const lines = pipelineText.split('\n');
   const kept = [];
@@ -256,34 +379,49 @@ async function main() {
     const info = locMap.get(url);
     const loc = info?.location || '';
     const title = info?.title || role;
+    const dept = info?.department || '';
+    const body = info?.body || '';
     const postedAt = info?.postedAt || null;
+    const minBase = info?.minBaseSalary;
 
-    const locOk = isUsEligible(loc);
-    const titleOk = titleAllowed(title);
-    const ageOk = !postedAt || new Date(postedAt) >= cutoff;
+    const pushDrop = (reason, signal) => dropped.push({ url, company, role, location: loc, reason, signal: signal || '' });
 
-    if (locOk && titleOk && ageOk) {
-      kept.push({ url: m[1], company, role, location: loc });
-    } else {
-      const reason = !locOk ? 'loc' : !titleOk ? 'title' : 'stale';
-      dropped.push({ url: m[1], company, role, location: loc, reason });
+    if (!isUsEligible(loc)) { pushDrop('loc', loc); continue; }
+    if (!titleAllowed(title)) { pushDrop('title', title); continue; }
+
+    if (cutoff && postedAt && new Date(postedAt) < cutoff) {
+      pushDrop('stale', postedAt.slice(0, 10));
+      continue;
     }
+
+    const deptCheck = departmentAllowed(title, dept);
+    if (!deptCheck.ok) { pushDrop('dept', deptCheck.signal); continue; }
+
+    const compCheck = compAllowed(minBase);
+    if (!compCheck.ok) { pushDrop('comp', compCheck.signal); continue; }
+
+    const bodyCheck = jdBodyAllowed(title, body);
+    if (!bodyCheck.ok) { pushDrop('body', bodyCheck.signal); continue; }
+
+    kept.push({ url, company, role, location: loc });
   }
 
   console.log(`\nKept: ${kept.length}   Dropped: ${dropped.length}`);
-  console.log(`  by location: ${dropped.filter(d => d.reason === 'loc').length}`);
-  console.log(`  by title:    ${dropped.filter(d => d.reason === 'title').length}`);
-  console.log(`  by stale:    ${dropped.filter(d => d.reason === 'stale').length}`);
+  for (const reason of ['loc', 'title', 'stale', 'dept', 'comp', 'body']) {
+    const n = dropped.filter(d => d.reason === reason).length;
+    if (n > 0) console.log(`  by ${reason.padEnd(6)}: ${n}`);
+  }
 
-  // Rewrite pipeline.md
   const header = `# Pipeline\n\n## Pendientes\n\n`;
   const keptLines = kept.map(k => `- [ ] ${k.url} | ${k.company} | ${k.role}${k.location ? ' | ' + k.location : ''}`).join('\n');
   writeFileSync(PIPELINE_PATH, header + keptLines + '\n');
   console.log(`\nRewrote ${PIPELINE_PATH} with ${kept.length} entries.`);
 
-  // Write dropped log for audit
-  const dropLog = dropped.map(d => `${d.reason}\t${d.company}\t${d.role}\t${d.location}\t${d.url}`).join('\n');
-  writeFileSync('data/phase5-dropped.tsv', `reason\tcompany\trole\tlocation\turl\n${dropLog}\n`);
+  const dropHeader = `reason\tsignal\tcompany\trole\tlocation\turl\n`;
+  const dropLog = dropped.map(d =>
+    `${d.reason}\t${d.signal}\t${d.company}\t${d.role}\t${d.location}\t${d.url}`
+  ).join('\n');
+  writeFileSync('data/phase5-dropped.tsv', dropHeader + dropLog + '\n');
   console.log(`Wrote audit trail to data/phase5-dropped.tsv`);
 }
 
