@@ -149,22 +149,11 @@ Usar WebSearch para salarios actuales (Glassdoor, Levels.fyi, Blind), reputació
 
 Score de comp (1-5): 5=top quartile, 4=above market, 3=median, 2=slightly below, 1=well below.
 
-#### Bloque E — Plan de Personalización
-
-| # | Sección | Estado actual | Cambio propuesto | Por qué |
-|---|---------|---------------|------------------|---------|
-
-Top 5 cambios al CV + Top 5 cambios a LinkedIn.
-
-#### Bloque F — Plan de Entrevistas
-
-6-10 historias STAR mapeadas a requisitos del JD:
-
-| # | Requisito del JD | Historia STAR | S | T | A | R |
-
-**Selección adaptada al arquetipo.** Incluir también:
-- 1 case study recomendado (cuál proyecto presentar y cómo)
-- Preguntas red-flag y cómo responderlas
+> **Bloques E (Plan de Personalización) y F (Plan de Entrevistas) NO se generan en batch.** Se generan on-demand cuando Ben decide aplicar:
+> - Block E → `/career-ops personalize` (modes/personalize.md)
+> - Block F → `/career-ops interview-prep` (modes/interview-prep.md)
+>
+> Esto mantiene los reports batch enfocados en la decisión apply/skip; los planes detallados se construyen recién contra la última versión de cv.md y el JD.
 
 #### Bloque G — Posting Legitimacy
 
@@ -233,6 +222,7 @@ Stub reports objetivo: ≤40 lines, ≤300 words.
 **Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
 **URL:** {URL de la oferta original}
 **PDF:** ❌ (batch — generate on-demand via /career-ops pdf)
+**Personalization & Interview Plan:** ❌ (on-demand via /career-ops personalize and /career-ops interview-prep)
 **Batch ID:** {{ID}}
 
 ---
@@ -247,12 +237,6 @@ Stub reports objetivo: ≤40 lines, ≤300 words.
 (contenido completo)
 
 ## D) Comp y Demanda
-(contenido completo)
-
-## E) Plan de Personalización
-(contenido completo)
-
-## F) Plan de Entrevistas
 (contenido completo)
 
 ## G) Posting Legitimacy
