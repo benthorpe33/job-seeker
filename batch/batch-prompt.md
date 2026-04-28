@@ -98,11 +98,11 @@ Convertir "builder" en señal profesional, no en "hobby maker". El framing cambi
 
 ### Phase 1 — Triage (always run)
 
-#### Bloque A — Resumen del Rol
+#### Bloque A — Resumen del Rol  *(≤150 words prose)*
 
 Tabla con: Arquetipo detectado, Domain, Function, Seniority, Remote, Team size, TL;DR.
 
-#### Bloque B — Match con CV
+#### Bloque B — Match con CV  *(≤150 words prose)*
 
 Read `cv.md`. Tabla con cada requisito del JD mapeado a líneas exactas del CV o keys de i18n.ts.
 
@@ -137,13 +137,13 @@ Sección de **gaps** con estrategia de mitigación para cada uno:
 
 ### Phase 2 — Full (solo si Global ≥ {{TRIAGE_THRESHOLD}})
 
-#### Bloque C — Nivel y Estrategia
+#### Bloque C — Nivel y Estrategia  *(≤150 words prose)*
 
 1. **Nivel detectado** en el JD vs **candidate's natural level**
 2. **Plan "vender senior sin mentir"**: frases específicas, logros concretos, founder como ventaja
 3. **Plan "si me downlevelan"**: aceptar si comp justa, review a 6 meses, criterios claros
 
-#### Bloque D — Comp y Demanda
+#### Bloque D — Comp y Demanda  *(≤150 words prose)*
 
 Usar WebSearch para salarios actuales (Glassdoor, Levels.fyi, Blind), reputación comp de la empresa, tendencia demanda. Tabla con datos y fuentes citadas. Si no hay datos, decirlo.
 
@@ -313,6 +313,13 @@ Si algo falla:
 ---
 
 ## Reglas Globales
+
+### Length budget (HARD CAPS)
+- **Stub reports** (sub-triage): ≤300 words total, ≤40 lines.
+- **Full reports** (post-triage): ≤800 words **excluding tables**.
+- Per-block prose: ≤150 words. Use tables for structured info; tables don't count toward the word budget.
+- If you find yourself writing a 4th paragraph in a single block, stop and trim.
+- These caps are non-negotiable. Cut adjectives, hedging, and recapped JD content before exceeding them.
 
 ### NUNCA
 1. Inventar experiencia o métricas
