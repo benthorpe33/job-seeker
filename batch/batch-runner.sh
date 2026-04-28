@@ -336,6 +336,26 @@ process_offer() {
 
   # Prepare system prompt with placeholders resolved
   local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
+  local resolved_prompt_pre="$BATCH_DIR/.resolved-prompt-${id}.pre"
+  local facts_pack_file="$BATCH_DIR/.facts-pack-${id}.md"
+
+  # Build facts pack from cv.md + article-digest.md (read once per offer; cacheable in API)
+  : > "$facts_pack_file"
+  if [[ -f "$PROJECT_DIR/cv.md" ]]; then
+    {
+      printf '## cv.md\n\n'
+      cat "$PROJECT_DIR/cv.md"
+      printf '\n'
+    } >> "$facts_pack_file"
+  fi
+  if [[ -f "$PROJECT_DIR/article-digest.md" ]]; then
+    {
+      printf '\n---\n\n## article-digest.md\n\n'
+      cat "$PROJECT_DIR/article-digest.md"
+      printf '\n'
+    } >> "$facts_pack_file"
+  fi
+
   # Escape sed delimiter characters in variables to prevent substitution breakage
   local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold
   esc_url="${url//\\/\\\\}"
@@ -353,7 +373,19 @@ process_offer() {
     -e "s|{{DATE}}|${esc_date}|g" \
     -e "s|{{ID}}|${esc_id}|g" \
     -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
-    "$PROMPT_FILE" > "$resolved_prompt"
+    "$PROMPT_FILE" > "$resolved_prompt_pre"
+
+  # Splice Facts Pack: replace the {{FACTS_PACK_MARKER}} line with the file contents.
+  # awk avoids sed's pain with multi-line content + special chars.
+  awk -v facts="$facts_pack_file" '
+    /^\{\{FACTS_PACK_MARKER\}\}$/ {
+      while ((getline line < facts) > 0) print line
+      close(facts)
+      next
+    }
+    { print }
+  ' "$resolved_prompt_pre" > "$resolved_prompt"
+  rm -f "$resolved_prompt_pre"
 
   # Launch claude -p worker (uses default model from Claude Max subscription)
   local exit_code=0
@@ -363,8 +395,8 @@ process_offer() {
     "$prompt" \
     > "$log_file" 2>&1 || exit_code=$?
 
-  # Cleanup resolved prompt
-  rm -f "$resolved_prompt"
+  # Cleanup resolved prompt + facts pack
+  rm -f "$resolved_prompt" "$facts_pack_file"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
