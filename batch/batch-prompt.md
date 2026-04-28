@@ -145,9 +145,11 @@ Sección de **gaps** con estrategia de mitigación para cada uno:
 
 #### Bloque D — Comp y Demanda  *(≤150 words prose)*
 
-Usar WebSearch para salarios actuales (Glassdoor, Levels.fyi, Blind), reputación comp de la empresa, tendencia demanda. Tabla con datos y fuentes citadas. Si no hay datos, decirlo.
+**WebSearch budget: ≤1 query per offer.** If the posting already publishes a comp range (NYC pay-transparency etc.), use that and skip WebSearch entirely. Otherwise issue ONE targeted query (e.g. `"{role} {company} salary {YYYY}"` on levels.fyi/Glassdoor/Blind) and stop.
 
-Score de comp (1-5): 5=top quartile, 4=above market, 3=median, 2=slightly below, 1=well below.
+Output a comp table with **≤3 rows**: (1) posting/employer range, (2) one external source, (3) landing estimate. Drop the demand-signal paragraph unless it changes the comp score.
+
+Comp score (1-5) in **one sentence** with rationale (no paragraph): 5=top quartile, 4=above market, 3=median, 2=slightly below, 1=well below. If no data, say so and score 3 with a one-line caveat.
 
 > **Bloques E (Plan de Personalización) y F (Plan de Entrevistas) NO se generan en batch.** Se generan on-demand cuando Ben decide aplicar:
 > - Block E → `/career-ops personalize` (modes/personalize.md)
