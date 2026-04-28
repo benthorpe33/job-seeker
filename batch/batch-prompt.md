@@ -155,21 +155,17 @@ Score de comp (1-5): 5=top quartile, 4=above market, 3=median, 2=slightly below,
 >
 > Esto mantiene los reports batch enfocados en la decisión apply/skip; los planes detallados se construyen recién contra la última versión de cv.md y el JD.
 
-#### Bloque G — Posting Legitimacy
+#### Bloque G — Posting Legitimacy (header line only in batch)
 
-Analyze posting signals to assess whether this is a real, active opening.
+In batch mode, do **NOT** write a `## G) Posting Legitimacy` section. Instead, set the report's `**Legitimacy:**` header field to one line:
 
-**Batch mode limitations:** Playwright is not available, so posting freshness signals (exact days posted, apply button state) cannot be directly verified. Mark these as "unverified (batch mode)."
+```
+**Legitimacy:** {High Confidence | Proceed with Caution | Suspicious} — {1-line reason combining description quality + reposting check (data/scan-history.tsv) + hiring signals from Block D}
+```
 
-**What IS available in batch mode:**
-1. **Description quality analysis** -- Full JD text is available. Analyze specificity, requirements realism, salary transparency, boilerplate ratio.
-2. **Company hiring signals** -- WebSearch queries for layoff/freeze news (combine with Block D comp research).
-3. **Reposting detection** -- Read `data/scan-history.tsv` to check for prior appearances.
-4. **Role market context** -- Qualitative assessment from JD content.
+Default to **Proceed with Caution** if signals are mixed or sparse. Use **Suspicious** only for clear red flags (extreme boilerplate, contradictory comp, recent layoffs at the hiring team's level, repeat reposting > 2x). Reserve **High Confidence** for postings with concrete team detail, transparent comp, and no concerning hiring signals.
 
-**Output format:** Same as interactive mode (Assessment tier + Signals table + Context Notes), but with a note that posting freshness is unverified.
-
-**Assessment:** Apply the same three tiers (High Confidence / Proceed with Caution / Suspicious), weighting available signals more heavily. If insufficient signals are available to make a determination, default to "Proceed with Caution" with a note about limited data.
+The full Block G table (with Playwright-verified freshness signals) is owned by interactive `modes/oferta.md`. Batch mode never produces it.
 
 **Refinar Score Global** con datos finales de Block D (Comp). Mantener el bloque de tabla idéntico al de Phase 1 con valores actualizados.
 
@@ -239,8 +235,7 @@ Stub reports objetivo: ≤40 lines, ≤300 words.
 ## D) Comp y Demanda
 (contenido completo)
 
-## G) Posting Legitimacy
-(contenido completo)
+(No `## G) Posting Legitimacy` section in batch — the `**Legitimacy:**` header line above carries the full signal.)
 
 ---
 
