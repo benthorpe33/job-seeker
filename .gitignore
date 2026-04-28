@@ -8,6 +8,10 @@ cv.md
 data/applications.md
 data/pipeline.md
 data/scan-history.tsv
+data/.linkedin-auth.json
+data/linkedin-saved-jobs.json
+data/linkedin-resolved.json
+data/linkedin-saved-html/
 reports/*.md
 !reports/.gitkeep
 output/*
