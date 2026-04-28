@@ -29,11 +29,15 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 TRIAGE_THRESHOLD=3.5
+# Default to Haiku 4.5: in a typical batch most offers fall below TRIAGE_THRESHOLD
+# and never reach Phase 2. For batches where every offer is expected to score
+# above threshold and produce a full Block D/comp judgment, override with --model.
+WORKER_MODEL="claude-haiku-4-5-20251001"
 
 usage() {
   cat <<'USAGE'
 career-ops batch runner — process job offers in batch via claude -p workers
-Uses your default Claude model (Claude Max subscription).
+Default worker model: claude-haiku-4-5-20251001 (override with --model).
 
 Usage: batch-runner.sh [OPTIONS]
 
@@ -45,6 +49,9 @@ Options:
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
   --triage-threshold N Score threshold for full-vs-stub report (default: 3.5; 0 disables gate)
+  --model MODEL        Claude model for the worker (default: claude-haiku-4-5-20251001).
+                       Use the Opus 4.x ID when running batches where every offer is
+                       expected to need the full Block D/comp judgment.
   -h, --help           Show this help
 
 Files:
@@ -79,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --triage-threshold) TRIAGE_THRESHOLD="$2"; shift 2 ;;
+    --model) WORKER_MODEL="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -387,13 +395,13 @@ process_offer() {
   ' "$resolved_prompt_pre" > "$resolved_prompt"
   rm -f "$resolved_prompt_pre"
 
-  # Launch claude -p worker (uses default model from Claude Max subscription)
+  # Launch claude -p worker
   local exit_code=0
-  claude -p \
-    --dangerously-skip-permissions \
-    --append-system-prompt-file "$resolved_prompt" \
-    "$prompt" \
-    > "$log_file" 2>&1 || exit_code=$?
+  local -a claude_args=( -p --dangerously-skip-permissions --append-system-prompt-file "$resolved_prompt" )
+  if [[ -n "$WORKER_MODEL" ]]; then
+    claude_args+=( --model "$WORKER_MODEL" )
+  fi
+  claude "${claude_args[@]}" "$prompt" > "$log_file" 2>&1 || exit_code=$?
 
   # Cleanup resolved prompt + facts pack
   rm -f "$resolved_prompt" "$facts_pack_file"
