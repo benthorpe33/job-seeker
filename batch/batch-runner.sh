@@ -28,6 +28,7 @@ RETRY_FAILED=false
 START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
+TRIAGE_THRESHOLD=3.5
 
 usage() {
   cat <<'USAGE'
@@ -43,6 +44,7 @@ Options:
   --start-from N       Start from offer ID N (skip earlier IDs)
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
+  --triage-threshold N Score threshold for full-vs-stub report (default: 3.5; 0 disables gate)
   -h, --help           Show this help
 
 Files:
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --start-from) START_FROM="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
+    --triage-threshold) TRIAGE_THRESHOLD="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -334,7 +337,7 @@ process_offer() {
   # Prepare system prompt with placeholders resolved
   local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
   # Escape sed delimiter characters in variables to prevent substitution breakage
-  local esc_url esc_jd_file esc_report_num esc_date esc_id
+  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold
   esc_url="${url//\\/\\\\}"
   esc_url="${esc_url//|/\\|}"
   esc_jd_file="${jd_file//\\/\\\\}"
@@ -342,12 +345,14 @@ process_offer() {
   esc_report_num="${report_num//|/\\|}"
   esc_date="${date//|/\\|}"
   esc_id="${id//|/\\|}"
+  esc_threshold="${TRIAGE_THRESHOLD//|/\\|}"
   sed \
     -e "s|{{URL}}|${esc_url}|g" \
     -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
     -e "s|{{REPORT_NUM}}|${esc_report_num}|g" \
     -e "s|{{DATE}}|${esc_date}|g" \
     -e "s|{{ID}}|${esc_id}|g" \
+    -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
     "$PROMPT_FILE" > "$resolved_prompt"
 
   # Launch claude -p worker (uses default model from Claude Max subscription)

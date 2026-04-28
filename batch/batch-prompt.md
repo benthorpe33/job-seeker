@@ -37,6 +37,7 @@ Eres un worker de evaluación de ofertas de empleo for the candidate (read name 
 | `{{REPORT_NUM}}` | Número de report (3 dígitos, zero-padded: 001, 002...) |
 | `{{DATE}}` | Fecha actual YYYY-MM-DD |
 | `{{ID}}` | ID único de la oferta en batch-input.tsv |
+| `{{TRIAGE_THRESHOLD}}` | Threshold de score para gate triage→full (default 3.5; 0 desactiva el gate) |
 
 ---
 
@@ -48,9 +49,16 @@ Eres un worker de evaluación de ofertas de empleo for the candidate (read name 
 2. Si el archivo está vacío o no existe, intenta obtener el JD desde `{{URL}}` con WebFetch
 3. Si ambos fallan, reporta error y termina
 
-### Paso 2 — Evaluación A-G
+### Paso 2 — Evaluación (Two-Pass: Triage → Full)
 
-Read `cv.md`. Ejecuta TODOS los bloques:
+Read `cv.md`. La evaluación es de dos fases con un gate de score:
+
+- **Phase 1 — Triage (siempre se ejecuta):** archetype detection + Block A + Block B + Score Global. **Detente** después del Score y aplica el gate.
+- **Phase 2 — Full (solo si Score Global ≥ {{TRIAGE_THRESHOLD}}):** continúa con Bloques C, D, E, F, G y los anexa al mismo report.
+- Si Score Global < {{TRIAGE_THRESHOLD}}, escribe un **stub report** (ver "Stub report" en Paso 3) y salta a Paso 5 (tracker line). NO ejecutes Bloques C–G; NO uses WebSearch.
+- Si Score = `N/A` (JD no parseable), escribe stub con nota "JD missing/unparseable" — sin Score Global y sin bloques.
+- Inclusivo: `≥` significa exactamente el threshold pasa (`3.5` con `{{TRIAGE_THRESHOLD}}=3.5` → full).
+- Si `{{TRIAGE_THRESHOLD}}` = `0`, todas las ofertas pasan a Phase 2 (modo backward-compat).
 
 #### Paso 0 — Detección de Arquetipo
 
@@ -88,6 +96,8 @@ Clasifica la oferta en uno de los 6 arquetipos. Si es híbrido, indica los 2 má
 
 Convertir "builder" en señal profesional, no en "hobby maker". El framing cambia, la verdad es la misma.
 
+### Phase 1 — Triage (always run)
+
 #### Bloque A — Resumen del Rol
 
 Tabla con: Arquetipo detectado, Domain, Function, Seniority, Remote, Team size, TL;DR.
@@ -109,6 +119,23 @@ Sección de **gaps** con estrategia de mitigación para cada uno:
 2. Can the candidate demonstrate experiencia adyacente?
 3. ¿Hay un proyecto portfolio que cubra este gap?
 4. Plan de mitigación concreto
+
+#### Score Global (computado al final de Phase 1)
+
+| Dimensión | Score |
+|-----------|-------|
+| Match con CV | X/5 |
+| Alineación North Star | X/5 |
+| Comp (estimado preliminar — refinado en Phase 2 si aplica) | X/5 |
+| Señales culturales | X/5 |
+| Red flags | -X (si hay) |
+| **Global** | **X/5** |
+
+**Gate:** Si Global < `{{TRIAGE_THRESHOLD}}` → escribe stub report (Paso 3) y salta a Paso 5. NO continúes con bloques C–G ni hagas WebSearch.
+
+---
+
+### Phase 2 — Full (solo si Global ≥ {{TRIAGE_THRESHOLD}})
 
 #### Bloque C — Nivel y Estrategia
 
@@ -155,16 +182,7 @@ Analyze posting signals to assess whether this is a real, active opening.
 
 **Assessment:** Apply the same three tiers (High Confidence / Proceed with Caution / Suspicious), weighting available signals more heavily. If insufficient signals are available to make a determination, default to "Proceed with Caution" with a note about limited data.
 
-#### Score Global
-
-| Dimensión | Score |
-|-----------|-------|
-| Match con CV | X/5 |
-| Alineación North Star | X/5 |
-| Comp | X/5 |
-| Señales culturales | X/5 |
-| Red flags | -X (si hay) |
-| **Global** | **X/5** |
+**Refinar Score Global** con datos finales de Block D (Comp). Mantener el bloque de tabla idéntico al de Phase 1 con valores actualizados.
 
 ### Paso 3 — Guardar Report .md
 
@@ -175,7 +193,36 @@ reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md
 
 Donde `{company-slug}` es el nombre de empresa en lowercase, sin espacios, con guiones.
 
-**Formato del report:**
+**Si Phase 2 se ejecutó (Score ≥ {{TRIAGE_THRESHOLD}}), usa el "Formato Full" de abajo.**
+**Si Score < {{TRIAGE_THRESHOLD}} o = N/A, usa el "Formato Stub":**
+
+```markdown
+# Evaluación: {Empresa} — {Rol}
+
+**Fecha:** {{DATE}}
+**Arquetipo:** {detectado}
+**Score:** {X.X}/5 (below triage threshold {{TRIAGE_THRESHOLD}} — stub report)
+**Legitimacy:** {tier — 1 line, sin tabla}
+**URL:** {URL de la oferta original}
+**PDF:** ❌ (batch — generate on-demand via /career-ops pdf)
+**Batch ID:** {{ID}}
+
+## A) Resumen del Rol
+{1-paragraph TL;DR}
+
+## B) Match con CV (gaps)
+{3-5 bullets max}
+
+## Why skip
+{1 sentence}
+
+## Keywords
+{15 keywords del JD para ATS}
+```
+
+Stub reports objetivo: ≤40 lines, ≤300 words.
+
+**Formato Full del report:**
 
 ```markdown
 # Evaluación: {Empresa} — {Rol}
@@ -262,6 +309,7 @@ Al terminar, imprime por stdout un resumen JSON para que el orquestador lo parse
   "role": "{rol}",
   "score": {score_num},
   "legitimacy": "{High Confidence|Proceed with Caution|Suspicious}",
+  "stub": {true_si_score_bajo_threshold_o_na},
   "pdf": null,
   "report": "{ruta_report}",
   "error": null
