@@ -10,7 +10,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BATCH_DIR="$SCRIPT_DIR"
 INPUT_FILE="$BATCH_DIR/batch-input.tsv"
 STATE_FILE="$BATCH_DIR/batch-state.tsv"
-PROMPT_FILE="$BATCH_DIR/batch-prompt.md"
+TRIAGE_PROMPT_FILE="$BATCH_DIR/batch-prompt-triage.md"
+FULL_PROMPT_FILE="$BATCH_DIR/batch-prompt-full.md"
 LOGS_DIR="$BATCH_DIR/logs"
 TRACKER_DIR="$BATCH_DIR/tracker-additions"
 REPORTS_DIR="$PROJECT_DIR/reports"
@@ -29,44 +30,58 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 TRIAGE_THRESHOLD=3.5
-# Default to Haiku 4.5: in a typical batch most offers fall below TRIAGE_THRESHOLD
-# and never reach Phase 2. For batches where every offer is expected to score
-# above threshold and produce a full Block D/comp judgment, override with --model.
-WORKER_MODEL="claude-haiku-4-5-20251001"
+# Two-pass split (js-ah3): triage call (cheap) decides whether to pay for the full pass.
+TRIAGE_MODEL="claude-haiku-4-5-20251001"
+FULL_MODEL="claude-opus-4-5"
 
 usage() {
   cat <<'USAGE'
 career-ops batch runner — process job offers in batch via claude -p workers
-Default worker model: claude-haiku-4-5-20251001 (override with --model).
+
+Two-pass architecture (js-ah3):
+  1. Triage pass — cheap model emits Phase 1 (Block A + B + Score Global). If
+     Score < --triage-threshold, the triage worker writes a stub report and
+     tracker line itself; the full pass is skipped.
+  2. Full pass — strong model reads the Phase 1 fragment, runs Blocks C/D/G,
+     refines the score, and writes the final report + tracker line.
+
+Default models: triage=claude-haiku-4-5-20251001, full=claude-opus-4-5.
 
 Usage: batch-runner.sh [OPTIONS]
 
 Options:
-  --parallel N         Number of parallel workers (default: 1)
-  --dry-run            Show what would be processed, don't execute
-  --retry-failed       Only retry offers marked as "failed" in state
-  --start-from N       Start from offer ID N (skip earlier IDs)
-  --max-retries N      Max retry attempts per offer (default: 2)
-  --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
-  --triage-threshold N Score threshold for full-vs-stub report (default: 3.5; 0 disables gate)
-  --model MODEL        Claude model for the worker (default: claude-haiku-4-5-20251001).
-                       Use the Opus 4.x ID when running batches where every offer is
-                       expected to need the full Block D/comp judgment.
-  -h, --help           Show this help
+  --parallel N           Number of parallel workers (default: 1)
+  --dry-run              Show what would be processed, don't execute
+  --retry-failed         Only retry offers marked as "failed" in state
+  --start-from N         Start from offer ID N (skip earlier IDs)
+  --max-retries N        Max retry attempts per offer (default: 2)
+  --min-score N          Skip tracker for offers scoring below N (default: 0 = off)
+  --triage-threshold N   Score threshold for full-vs-stub report (default: 3.5;
+                         0 disables the gate and forces the full pass on every offer)
+  --triage-model MODEL   Claude model for the triage pass (default: claude-haiku-4-5-20251001)
+  --full-model MODEL     Claude model for the full pass (default: claude-opus-4-5)
+  -h, --help             Show this help
 
 Files:
-  batch-input.tsv      Input offers (id, url, source, notes)
-  batch-state.tsv      Processing state (auto-managed)
-  batch-prompt.md      Prompt template for workers
-  logs/                Per-offer logs
-  tracker-additions/   Tracker lines for post-batch merge
+  batch-input.tsv          Input offers (id, url, source, notes)
+  batch-state.tsv          Processing state (auto-managed)
+  batch-prompt-triage.md   Phase 1 prompt template
+  batch-prompt-full.md     Phase 2 prompt template
+  logs/                    Per-offer logs (.triage.log + .full.log per offer)
+  tracker-additions/       Tracker lines for post-batch merge
 
 Examples:
   # Dry run to see pending offers
   ./batch-runner.sh --dry-run
 
-  # Process all pending
+  # Process all pending with default split (Haiku triage, Opus full)
   ./batch-runner.sh
+
+  # Force the full pass on every offer (no triage gate)
+  ./batch-runner.sh --triage-threshold 0
+
+  # Override the full-pass model (e.g. cheaper Opus or Sonnet)
+  ./batch-runner.sh --full-model claude-sonnet-4-6
 
   # Retry only failed offers
   ./batch-runner.sh --retry-failed
@@ -86,7 +101,13 @@ while [[ $# -gt 0 ]]; do
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --triage-threshold) TRIAGE_THRESHOLD="$2"; shift 2 ;;
-    --model) WORKER_MODEL="$2"; shift 2 ;;
+    --triage-model) TRIAGE_MODEL="$2"; shift 2 ;;
+    --full-model) FULL_MODEL="$2"; shift 2 ;;
+    --model)
+      echo "ERROR: --model was removed in js-ah3. Use --triage-model and/or --full-model." >&2
+      echo "       Triage default: $TRIAGE_MODEL · Full default: $FULL_MODEL" >&2
+      exit 1
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -125,8 +146,13 @@ check_prerequisites() {
     exit 1
   fi
 
-  if [[ ! -f "$PROMPT_FILE" ]]; then
-    echo "ERROR: $PROMPT_FILE not found."
+  if [[ ! -f "$TRIAGE_PROMPT_FILE" ]]; then
+    echo "ERROR: $TRIAGE_PROMPT_FILE not found."
+    exit 1
+  fi
+
+  if [[ ! -f "$FULL_PROMPT_FILE" ]]; then
+    echo "ERROR: $FULL_PROMPT_FILE not found."
     exit 1
   fi
 
@@ -315,7 +341,66 @@ reserve_report_num() {
   run_with_state_lock reserve_report_num_unlocked "$@"
 }
 
-# Process a single offer
+# Build a fully-resolved system-prompt file by substituting placeholders + facts pack.
+# Args: prompt_template_path output_path facts_pack_path url jd_file report_num date id threshold phase1_file
+build_resolved_prompt() {
+  local template="$1" out="$2" facts="$3"
+  local url="$4" jd_file="$5" report_num="$6" date="$7" id="$8" threshold="$9" phase1_file="${10}"
+
+  local pre="${out}.pre"
+
+  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold esc_phase1
+  esc_url="${url//\\/\\\\}";              esc_url="${esc_url//|/\\|}"
+  esc_jd_file="${jd_file//\\/\\\\}";      esc_jd_file="${esc_jd_file//|/\\|}"
+  esc_report_num="${report_num//|/\\|}"
+  esc_date="${date//|/\\|}"
+  esc_id="${id//|/\\|}"
+  esc_threshold="${threshold//|/\\|}"
+  esc_phase1="${phase1_file//\\/\\\\}";   esc_phase1="${esc_phase1//|/\\|}"
+
+  sed \
+    -e "s|{{URL}}|${esc_url}|g" \
+    -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
+    -e "s|{{REPORT_NUM}}|${esc_report_num}|g" \
+    -e "s|{{DATE}}|${esc_date}|g" \
+    -e "s|{{ID}}|${esc_id}|g" \
+    -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
+    -e "s|{{PHASE1_FILE}}|${esc_phase1}|g" \
+    "$template" > "$pre"
+
+  # Splice Facts Pack: replace the {{FACTS_PACK_MARKER}} line with the file contents.
+  # awk avoids sed's pain with multi-line content + special chars.
+  awk -v facts="$facts" '
+    /^\{\{FACTS_PACK_MARKER\}\}$/ {
+      while ((getline line < facts) > 0) print line
+      close(facts)
+      next
+    }
+    { print }
+  ' "$pre" > "$out"
+  rm -f "$pre"
+}
+
+# Extract the LAST JSON status line emitted by a worker. Worker JSON is
+# identified by `"phase":"triage"` or `"phase":"full"` on the same line.
+# `tail -1` grabs the actual emitted JSON (last) rather than an earlier echo
+# of the prompt template.
+extract_last_status_json() {
+  local log_file="$1"
+  grep -E '"phase":[[:space:]]*"(triage|full)"' "$log_file" 2>/dev/null | tail -1 || true
+}
+
+extract_score_from_json() {
+  local json="$1"
+  echo "$json" | sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' | head -1
+}
+
+extract_stub_from_json() {
+  local json="$1"
+  echo "$json" | sed -nE 's/.*"stub":[[:space:]]*(true|false).*/\1/p' | head -1
+}
+
+# Process a single offer — two sequential claude -p calls (triage, then full if score ≥ threshold).
 process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
 
@@ -328,26 +413,12 @@ process_offer() {
   local date
   date=$(date +%Y-%m-%d)
   local jd_file="/tmp/batch-jd-${id}.txt"
+  local phase1_file="/tmp/batch-phase1-${id}.md"
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
-  # Build the prompt with placeholders replaced
-  local prompt
-  prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-F + report .md + PDF + tracker line."
-  prompt="$prompt URL: $url"
-  prompt="$prompt JD file: $jd_file"
-  prompt="$prompt Report number: $report_num"
-  prompt="$prompt Date: $date"
-  prompt="$prompt Batch ID: $id"
-
-  local log_file="$LOGS_DIR/${report_num}-${id}.log"
-
-  # Prepare system prompt with placeholders resolved
-  local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
-  local resolved_prompt_pre="$BATCH_DIR/.resolved-prompt-${id}.pre"
+  # Build facts pack from cv.md + article-digest.md (shared across both passes)
   local facts_pack_file="$BATCH_DIR/.facts-pack-${id}.md"
-
-  # Build facts pack from cv.md + article-digest.md (read once per offer; cacheable in API)
   : > "$facts_pack_file"
   if [[ -f "$PROJECT_DIR/cv.md" ]]; then
     {
@@ -364,78 +435,140 @@ process_offer() {
     } >> "$facts_pack_file"
   fi
 
-  # Escape sed delimiter characters in variables to prevent substitution breakage
-  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold
-  esc_url="${url//\\/\\\\}"
-  esc_url="${esc_url//|/\\|}"
-  esc_jd_file="${jd_file//\\/\\\\}"
-  esc_jd_file="${esc_jd_file//|/\\|}"
-  esc_report_num="${report_num//|/\\|}"
-  esc_date="${date//|/\\|}"
-  esc_id="${id//|/\\|}"
-  esc_threshold="${TRIAGE_THRESHOLD//|/\\|}"
-  sed \
-    -e "s|{{URL}}|${esc_url}|g" \
-    -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
-    -e "s|{{REPORT_NUM}}|${esc_report_num}|g" \
-    -e "s|{{DATE}}|${esc_date}|g" \
-    -e "s|{{ID}}|${esc_id}|g" \
-    -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
-    "$PROMPT_FILE" > "$resolved_prompt_pre"
+  # Stale phase-1 fragment from a prior attempt would mislead the full pass.
+  rm -f "$phase1_file"
 
-  # Splice Facts Pack: replace the {{FACTS_PACK_MARKER}} line with the file contents.
-  # awk avoids sed's pain with multi-line content + special chars.
-  awk -v facts="$facts_pack_file" '
-    /^\{\{FACTS_PACK_MARKER\}\}$/ {
-      while ((getline line < facts) > 0) print line
-      close(facts)
-      next
-    }
-    { print }
-  ' "$resolved_prompt_pre" > "$resolved_prompt"
-  rm -f "$resolved_prompt_pre"
+  # User-prompt skeleton — same shape for both passes; the worker's role is
+  # set by the system prompt (triage vs full).
+  local user_prompt_base
+  user_prompt_base="Process this job offer per the system prompt."
+  user_prompt_base="$user_prompt_base URL: $url"
+  user_prompt_base="$user_prompt_base JD file: $jd_file"
+  user_prompt_base="$user_prompt_base Report number: $report_num"
+  user_prompt_base="$user_prompt_base Date: $date"
+  user_prompt_base="$user_prompt_base Batch ID: $id"
 
-  # Launch claude -p worker
-  local exit_code=0
-  local -a claude_args=( -p --dangerously-skip-permissions --append-system-prompt-file "$resolved_prompt" )
-  if [[ -n "$WORKER_MODEL" ]]; then
-    claude_args+=( --model "$WORKER_MODEL" )
+  # ============================================================
+  # PASS 1 — TRIAGE
+  # ============================================================
+  local triage_log="$LOGS_DIR/${report_num}-${id}.triage.log"
+  local resolved_triage="$BATCH_DIR/.resolved-prompt-${id}.triage.md"
+
+  build_resolved_prompt \
+    "$TRIAGE_PROMPT_FILE" "$resolved_triage" "$facts_pack_file" \
+    "$url" "$jd_file" "$report_num" "$date" "$id" "$TRIAGE_THRESHOLD" "$phase1_file"
+
+  local triage_user_prompt="$user_prompt_base Phase: triage. Phase-1 fragment path: $phase1_file."
+
+  local triage_exit=0
+  local -a triage_args=( -p --dangerously-skip-permissions --append-system-prompt-file "$resolved_triage" )
+  if [[ -n "$TRIAGE_MODEL" ]]; then
+    triage_args+=( --model "$TRIAGE_MODEL" )
   fi
-  claude "${claude_args[@]}" "$prompt" > "$log_file" 2>&1 || exit_code=$?
+  echo "    → triage pass (model: ${TRIAGE_MODEL:-default})"
+  claude "${triage_args[@]}" "$triage_user_prompt" > "$triage_log" 2>&1 || triage_exit=$?
+  rm -f "$resolved_triage"
 
-  # Cleanup resolved prompt + facts pack
-  rm -f "$resolved_prompt" "$facts_pack_file"
+  if [[ $triage_exit -ne 0 ]]; then
+    local completed_at error_msg
+    completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    error_msg=$(tail -5 "$triage_log" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "triage exit $triage_exit")
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "triage: $error_msg" "$retries"
+    echo "    ❌ Triage failed (attempt $retries, exit $triage_exit)"
+    rm -f "$facts_pack_file" "$phase1_file"
+    return
+  fi
+
+  local triage_json triage_score triage_stub
+  triage_json=$(extract_last_status_json "$triage_log")
+  triage_score=$(extract_score_from_json "$triage_json")
+  triage_stub=$(extract_stub_from_json "$triage_json")
+  triage_score="${triage_score:--}"
+
+  # If the triage worker decided this is a stub (score < threshold), it has
+  # already written the report + tracker line. We're done.
+  if [[ "$triage_stub" == "true" ]]; then
+    local completed_at
+    completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Min-score gate — if set, mark sub-min-score stubs as "skipped" so they
+    # don't count as completed evaluations.
+    if [[ "$triage_score" != "-" && -n "$triage_score" ]] && awk "BEGIN{exit!($MIN_SCORE>0)}"; then
+      if awk "BEGIN{exit!($triage_score+0 < $MIN_SCORE+0)}"; then
+        update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$triage_score" "below-min-score" "$retries"
+        echo "    ⏭️  Skipped (score: $triage_score < min-score: $MIN_SCORE)"
+        rm -f "$facts_pack_file" "$phase1_file"
+        return
+      fi
+    fi
+
+    update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$triage_score" "-" "$retries"
+    echo "    ✅ Stub (score: $triage_score, report: $report_num) — full pass skipped"
+    rm -f "$facts_pack_file" "$phase1_file"
+    return
+  fi
+
+  # Triage said keep — phase-1 fragment must exist for the full pass to splice in.
+  if [[ ! -f "$phase1_file" ]]; then
+    local completed_at
+    completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: phase-1 fragment missing" "$retries"
+    echo "    ❌ Triage produced no phase-1 fragment at $phase1_file"
+    rm -f "$facts_pack_file"
+    return
+  fi
+
+  # ============================================================
+  # PASS 2 — FULL
+  # ============================================================
+  local full_log="$LOGS_DIR/${report_num}-${id}.full.log"
+  local resolved_full="$BATCH_DIR/.resolved-prompt-${id}.full.md"
+
+  build_resolved_prompt \
+    "$FULL_PROMPT_FILE" "$resolved_full" "$facts_pack_file" \
+    "$url" "$jd_file" "$report_num" "$date" "$id" "$TRIAGE_THRESHOLD" "$phase1_file"
+
+  local full_user_prompt="$user_prompt_base Phase: full. Phase-1 fragment path: $phase1_file."
+
+  local full_exit=0
+  local -a full_args=( -p --dangerously-skip-permissions --append-system-prompt-file "$resolved_full" )
+  if [[ -n "$FULL_MODEL" ]]; then
+    full_args+=( --model "$FULL_MODEL" )
+  fi
+  echo "    → full pass (model: ${FULL_MODEL:-default}, triage score: $triage_score)"
+  claude "${full_args[@]}" "$full_user_prompt" > "$full_log" 2>&1 || full_exit=$?
+  rm -f "$resolved_full" "$facts_pack_file" "$phase1_file"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  if [[ $exit_code -eq 0 ]]; then
-    # Try to extract score from worker output
-    local score="-"
-    local score_match
-   score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
-    if [[ -n "$score_match" ]]; then
-      score="$score_match"
-    fi
-
-    # Check min-score gate
-    if [[ "$score" != "-" && -n "$score" ]] && awk "BEGIN{exit!($MIN_SCORE>0)}"; then
-      if awk "BEGIN{exit!($score+0 < $MIN_SCORE+0)}"; then
-        update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries"
-        echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
-        continue
-      fi
-    fi
-
-    update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$score" "-" "$retries"
-    echo "    ✅ Completed (score: $score, report: $report_num)"
-  else
-    retries=$((retries + 1))
+  if [[ $full_exit -ne 0 ]]; then
     local error_msg
-    error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
-    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
-    echo "    ❌ Failed (attempt $retries, exit code $exit_code)"
+    error_msg=$(tail -5 "$full_log" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "full exit $full_exit")
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "full: $error_msg" "$retries"
+    echo "    ❌ Full pass failed (attempt $retries, exit $full_exit)"
+    return
   fi
+
+  local full_json full_score
+  full_json=$(extract_last_status_json "$full_log")
+  full_score=$(extract_score_from_json "$full_json")
+  full_score="${full_score:-$triage_score}"
+
+  # Min-score gate on the refined score
+  if [[ "$full_score" != "-" && -n "$full_score" ]] && awk "BEGIN{exit!($MIN_SCORE>0)}"; then
+    if awk "BEGIN{exit!($full_score+0 < $MIN_SCORE+0)}"; then
+      update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$full_score" "below-min-score" "$retries"
+      echo "    ⏭️  Skipped (refined score: $full_score < min-score: $MIN_SCORE)"
+      return
+    fi
+  fi
+
+  update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$full_score" "-" "$retries"
+  echo "    ✅ Completed (refined score: $full_score, report: $report_num)"
 }
 
 # Merge tracker additions into applications.md
@@ -507,6 +640,7 @@ main() {
 
   echo "=== career-ops batch runner ==="
   echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+  echo "Triage model: $TRIAGE_MODEL | Full model: $FULL_MODEL | Triage threshold: $TRIAGE_THRESHOLD"
   echo "Input: $total_input offers"
   echo ""
 
