@@ -70,3 +70,25 @@ export type JobRecord = {
   exitCode: number | null;
   signal: string | null;
 };
+
+export type JobLogEvent = JobLogLine & { id: number };
+
+export type JobDoneEvent = {
+  code: number | null;
+  signal: string | null;
+  status: JobStatus;
+};
+
+export type JobStartRequest = {
+  args?: string[];
+};
+
+export type JobStartResponse = {
+  jobId: string;
+  kind: JobKind;
+  startedAt: string;
+};
+
+export type JobListResponse = {
+  jobs: JobRecord[];
+};

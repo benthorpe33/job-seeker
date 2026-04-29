@@ -5,6 +5,7 @@ import type { HealthResponse } from "@job-seeker/shared";
 import { HOST, PORT, REPO_ROOT, SERVER_VERSION } from "./env.js";
 import { openDb } from "./index/db.js";
 import { rebuildIndex } from "./index/rebuild.js";
+import { jobsPlugin } from "./jobs/routes.js";
 
 const startedAt = new Date().toISOString();
 
@@ -23,6 +24,8 @@ async function buildServer() {
     methods: ["GET", "POST", "PATCH", "DELETE"],
     credentials: false,
   });
+
+  await app.register(jobsPlugin);
 
   app.get("/api/health", async (): Promise<HealthResponse> => ({
     ok: true,
