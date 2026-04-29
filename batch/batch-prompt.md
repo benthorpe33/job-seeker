@@ -44,7 +44,9 @@ Cross-cutting: position the candidate as a **technical builder** — same truth,
 
 **Block A — Role Summary** *(≤150 words prose)*: table with archetype, domain, function, seniority, remote/hybrid, team size, TL;DR.
 
-**Block B — CV Match** *(≤150 words prose)*: use the Facts Pack. Table mapping each JD requirement to the exact line text from cv.md (or i18n.ts key). Emphasis by archetype: FDE→delivery+client; SA→integrations+design; PM→discovery+metrics; LLMOps→evals+observability; Agentic→multi-agent+HITL; Transformation→change mgmt+adoption. Then **Gaps** sub-section — for each: hard-blocker vs nice-to-have, adjacent experience, portfolio coverage, mitigation plan.
+**Block B — CV Match** *(≤150 words prose; full-pass form)*: use the Facts Pack. Table mapping each JD requirement to the exact line text from cv.md (or i18n.ts key). Emphasis by archetype: FDE→delivery+client; SA→integrations+design; PM→discovery+metrics; LLMOps→evals+observability; Agentic→multi-agent+HITL; Transformation→change mgmt+adoption. Then **Gaps** sub-section — for each: hard-blocker vs nice-to-have, adjacent experience, portfolio coverage, mitigation plan.
+
+> **Phase 1 caveat:** the verbose Block B above is for the **full report**. While computing the Score Global, write Block B internally (don't print it yet). If the gate sends you to a **stub**, do NOT print this verbose form — emit the terse stub-body Block B per the Step-3 stub-body rules. Skip the requirement-mapping table and the strong-match bullets entirely.
 
 **Score Global** (end of Phase 1):
 
@@ -83,8 +85,13 @@ Path: `reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md` (slug = lowercase + hy
 - Full only: `**Personalization & Interview Plan:** ❌ (on-demand via /career-ops personalize and /career-ops interview-prep)`.
 - `**Batch ID:** {{ID}}`.
 
-**Stub body** (Score < threshold or N/A; ≤40 lines, ≤300 words total):
-`## A) Role Summary` (1-paragraph TL;DR) · `## B) CV Match (gaps)` (3-5 bullets) · `## Why skip` (1 sentence) · `## Keywords` (15 JD keywords for ATS).
+**Stub body** (Score < threshold or N/A; ≤40 lines, ≤300 words total — TERSE):
+- `## A) Role Summary` — 1 short paragraph (≤60 words). Domain + seniority + comp + stand-out detail.
+- `## B) CV Match (gaps)` — **gaps only**, max 3 bullets, **one line each**, ≤15 words per bullet. Name the gap + a single severity clause. **No quoted cv.md text. No mitigation plan. No "strong match" bullets** (stubs are skip recommendations — only gaps matter for the decision).
+- `## Why skip` — exactly 1 short sentence (≤25 words). State the dominant blocker.
+- `## Keywords` — 15 JD keywords for ATS, comma-separated, no descriptions.
+
+If you find yourself adding a fourth bullet to B, a second sentence to "Why skip," or any quoted cv.md line in a stub: stop and trim.
 
 **Full body** (Score ≥ threshold; ≤800 words excluding tables): `---` then `## A) Role Summary` · `## B) CV Match` · `## C) Level & Strategy` · `## D) Comp & Demand`. NO `## G)` section — the `**Legitimacy:**` header carries the full signal. Then `---` and `## Keywords` (15-20 JD keywords for ATS).
 
