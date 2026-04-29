@@ -3,23 +3,37 @@
 *.db
 .beads-credential-key
 
-# Personal data (user fills these)
+# Personal data (user fills these — copy *.example.md / *.example.yml to start)
+CLAUDE.md
 cv.md
+article-digest.md
 data/applications.md
 data/pipeline.md
+data/pipeline.md.bak.*
 data/scan-history.tsv
 data/.linkedin-auth.json
 data/linkedin-saved-jobs.json
 data/linkedin-resolved.json
 data/linkedin-saved-html/
+data/linkedin-pipeline-preview.md
+data/outcomes.tsv
+data/outcomes-README.md
+data/cover-letters/
 reports/*.md
 !reports/.gitkeep
+interview-prep/*.md
+!interview-prep/story-bank.example.md
 output/*
 !output/.gitkeep
 batch/logs/*
 !batch/logs/.gitkeep
 batch/batch-state.tsv
+batch/batch-state.tsv.*
 batch/batch-input.tsv
+batch/batch-input.tsv.*
+batch/jd-*.txt
+batch/jd-*.json
+batch/*-board.json
 batch/tracker-additions/**/*.tsv
 !batch/tracker-additions/.gitkeep
 jds/*
@@ -31,6 +45,13 @@ portals.yml
 modes/_profile.md
 .update-dismissed
 .update-lock
+
+# Beads task-tracker state (per-user task history)
+.beads/issues.jsonl
+.beads/metadata.json
+
+# Ad-hoc / company-specific scratch files
+doppel-api.json
 
 # Secrets (never commit — use .env.example as template)
 .env
@@ -48,5 +69,10 @@ bun.lock
 # Claude Code local
 .claude/settings.local.json
 .claude/memory/
+.claude/scheduled_tasks.lock
 career-dashboard
 package-lock.json
+
+# IDE
+.vscode/
+.idea/
