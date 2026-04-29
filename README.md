@@ -33,7 +33,6 @@ updates don't clobber them.
 
 2. **Copy the example configs and fill them in:**
    ```bash
-   cp CLAUDE.example.md CLAUDE.md                          # global agent rules
    cp config/profile.example.yml config/profile.yml        # name, links, comp
    cp templates/portals.example.yml portals.yml            # ATS targets
    cp modes/_profile.template.md modes/_profile.md         # archetypes, scoring
@@ -43,6 +42,13 @@ updates don't clobber them.
    #   cv.md                — single-source-of-truth CV in markdown
    #   article-digest.md    — proof points the evaluator can cite
    ```
+
+   `CLAUDE.md` (the agent's system rules) is already committed and works out of
+   the box. To layer your own preferences on top — profile, hard rules,
+   archetype priorities, target compensation, location policy, drafting tone —
+   create a `CLAUDE.local.md` in the repo root. It's gitignored, and the
+   committed `CLAUDE.md` ends with `@CLAUDE.local.md` so your overrides load
+   automatically when the file exists.
 
 3. **Initialize task tracking (optional, recommended):**
    ```bash
@@ -61,7 +67,7 @@ updates don't clobber them.
 So this repo can be safely shared, the following are excluded from version
 control. Each user maintains their own local copy:
 
-- **Identity / portfolio:** `CLAUDE.md`, `cv.md`, `article-digest.md`,
+- **Identity / portfolio:** `CLAUDE.local.md`, `cv.md`, `article-digest.md`,
   `config/profile.yml`, `modes/_profile.md`, `portals.yml`,
   `interview-prep/story-bank.md`
 - **Search state:** `data/applications.md`, `data/pipeline.md`,
@@ -83,7 +89,7 @@ See [`.gitignore`](.gitignore) for the full list.
 | `templates/` | CV templates (HTML + LaTeX), state schema | No |
 | `dashboard/` | Optional Go-based TUI dashboard | No |
 | `batch/` | Batch evaluation harness | Prompt + scripts only |
-| `cv.md`, `article-digest.md`, `config/profile.yml`, `portals.yml`, `modes/_profile.md` | **Your** identity and search config | Yes — gitignored |
+| `CLAUDE.local.md`, `cv.md`, `article-digest.md`, `config/profile.yml`, `portals.yml`, `modes/_profile.md` | **Your** identity and search config | Yes — gitignored |
 | `data/` | Pipeline inbox + application tracker | Yes — gitignored |
 | `reports/` | Evaluation outputs (`{###}-{slug}-{date}.md`) | Generated |
 | `output/` | Tailored CV PDFs | Generated |

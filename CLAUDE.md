@@ -365,3 +365,17 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 - No markdown bold (`**`) in status field
 - No dates in status field (use the date column)
 - No extra text (use the notes column)
+
+---
+
+## Personal customizations (optional)
+
+User-specific rules — your profile, hard rules, archetype priorities, target
+companies, compensation ranges, location/remote preferences, drafting tone —
+live in `CLAUDE.local.md` (gitignored). The import below loads them on top of
+the system rules above when present; if the file doesn't exist (e.g. a fresh
+clone), the import is a no-op and the system runs with defaults. To start a
+local override, copy your existing customizations into `CLAUDE.local.md` or
+write a fresh one — see `README.md` for what typically goes there.
+
+@CLAUDE.local.md

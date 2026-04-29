@@ -4,7 +4,7 @@
 .beads-credential-key
 
 # Personal data (user fills these — copy *.example.md / *.example.yml to start)
-CLAUDE.md
+CLAUDE.local.md
 cv.md
 article-digest.md
 data/applications.md
