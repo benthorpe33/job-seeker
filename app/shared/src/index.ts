@@ -52,6 +52,14 @@ export type JobLogLine = {
   line: string;
 };
 
+export type IndexStats = {
+  applications: number;
+  reports: number;
+  scanHistory: number;
+  pipelineEntries: number;
+  durationMs: number;
+};
+
 export type JobStatus = "running" | "completed" | "failed" | "cancelled";
 
 export type JobRecord = {

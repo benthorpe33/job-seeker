@@ -3,6 +3,8 @@ import cors from "@fastify/cors";
 
 import type { HealthResponse } from "@job-seeker/shared";
 import { HOST, PORT, REPO_ROOT, SERVER_VERSION } from "./env.js";
+import { openDb } from "./index/db.js";
+import { rebuildIndex } from "./index/rebuild.js";
 
 const startedAt = new Date().toISOString();
 
@@ -35,6 +37,12 @@ async function buildServer() {
 async function start() {
   const app = await buildServer();
   try {
+    const db = openDb();
+    const counts = rebuildIndex(db, REPO_ROOT);
+    db.close();
+    app.log.info(
+      `index rebuilt: applications=${counts.applications} reports=${counts.reports} scanHistory=${counts.scanHistory} pipelineEntries=${counts.pipelineEntries} (${counts.durationMs}ms)`,
+    );
     const address = await app.listen({ host: HOST, port: PORT });
     app.log.info(
       `job_seeker server listening on ${address} (repoRoot=${REPO_ROOT})`,
