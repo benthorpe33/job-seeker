@@ -1,0 +1,26 @@
+{
+  "name": "job-seeker-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local React UI for the job_seeker pipeline",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "server",
+    "web",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently --names server,web --prefix-colors cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace server run build && npm --workspace web run build",
+    "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "typescript": "^5.6.3"
+  }
+}
