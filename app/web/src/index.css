@@ -1,3 +1,113 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    background: #020617;
+    color: #e2e8f0;
+  }
+}
+
+/* Markdown body styles for ReactMarkdown output. Avoids pulling in
+   @tailwindcss/typography for one viewer. */
+.markdown {
+  color: #cbd5e1;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+.markdown h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem;
+  color: #f1f5f9;
+}
+.markdown h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  padding-top: 0.25rem;
+  scroll-margin-top: 1rem;
+  color: #f1f5f9;
+  border-top: 1px solid #1e293b;
+  padding-top: 1rem;
+}
+.markdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+  color: #e2e8f0;
+}
+.markdown p {
+  margin: 0.5rem 0;
+}
+.markdown a {
+  color: #38bdf8;
+  text-decoration: none;
+}
+.markdown a:hover {
+  text-decoration: underline;
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.markdown li {
+  margin: 0.15rem 0;
+}
+.markdown strong {
+  color: #f1f5f9;
+}
+.markdown code {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.markdown pre {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.markdown pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.markdown blockquote {
+  border-left: 3px solid #334155;
+  padding-left: 0.75rem;
+  margin: 0.75rem 0;
+  color: #94a3b8;
+}
+.markdown table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid #1e293b;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: #0f172a;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+.markdown hr {
+  border: 0;
+  border-top: 1px solid #1e293b;
+  margin: 1.25rem 0;
+}

@@ -7,6 +7,7 @@ import { openDb } from "./index/db.js";
 import { rebuildIndex } from "./index/rebuild.js";
 import { startWatcher } from "./index/watcher.js";
 import { jobsPlugin } from "./jobs/routes.js";
+import { apiPlugin } from "./api/routes.js";
 
 const startedAt = new Date().toISOString();
 
@@ -56,6 +57,8 @@ async function start() {
         error: (m, e) => app.log.error({ err: e }, m),
       },
     });
+
+    await app.register(apiPlugin({ db }));
 
     let closed = false;
     app.addHook("onClose", async () => {

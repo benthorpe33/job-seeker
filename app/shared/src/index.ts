@@ -92,3 +92,41 @@ export type JobStartResponse = {
 export type JobListResponse = {
   jobs: JobRecord[];
 };
+
+export type ApplicationsListQuery = {
+  sort: "score" | "date" | "company" | "role" | "num";
+  dir: "asc" | "desc";
+  status: string[];
+  q: string;
+};
+
+export type ApplicationsListResponse = {
+  rows: ApplicationRow[];
+  total: number;
+  query: ApplicationsListQuery;
+};
+
+export type IndexBusEvent = {
+  kind:
+    | "applications"
+    | "reports"
+    | "scan_history"
+    | "pipeline"
+    | "rejections";
+  op: "upsert" | "delete";
+  path: string;
+  id?: string | number;
+};
+
+export type ApplicationPatchBody = {
+  status?: string;
+  notes?: string;
+  rejection_reason?: string;
+};
+
+export type JobLogPanelEntry = {
+  jobId: string;
+  kind: JobKind;
+  startedAt: string;
+  status: JobStatus;
+};
