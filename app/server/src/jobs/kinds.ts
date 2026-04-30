@@ -46,7 +46,15 @@ const SPECS: Record<JobKind, KindSpec> = {
     needsBash: false,
     build: (userArgs) => ({
       cmd: "node",
-      args: ["scripts/linkedin-build-input.mjs", ...userArgs],
+      args: ["scripts/linkedin-build-batch-input.mjs", ...userArgs],
+    }),
+    validate: rejectShellMetachars,
+  },
+  "prefetch-jds": {
+    needsBash: false,
+    build: (userArgs) => ({
+      cmd: "node",
+      args: ["scripts/prefetch-jds.mjs", ...userArgs],
     }),
     validate: rejectShellMetachars,
   },

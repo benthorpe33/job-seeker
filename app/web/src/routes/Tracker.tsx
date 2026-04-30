@@ -18,6 +18,7 @@ import { listApplications, startScanJob } from "../lib/api";
 import { useSSE } from "../lib/sse";
 import { useJobStore } from "../lib/store";
 import { ensureJobSubscription } from "../lib/jobSubscriptions";
+import { LinkedinPipelineModal } from "../components/LinkedinPipelineModal";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { StatusChip } from "../components/StatusChip";
 
@@ -51,6 +52,7 @@ export function Tracker() {
   const q = params.get("q") ?? "";
 
   const [qInput, setQInput] = useState(q);
+  const [linkedinModalOpen, setLinkedinModalOpen] = useState(false);
   // Debounce search input → URL params.
   useEffect(() => {
     const t = setTimeout(() => {
@@ -269,14 +271,27 @@ export function Tracker() {
             {query.data ? `${query.data.total} rows` : "loading…"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleRunScan}
-          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-sm text-emerald-200 hover:bg-emerald-500/25"
-        >
-          Run scan
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLinkedinModalOpen(true)}
+            className="rounded border border-sky-500/40 bg-sky-500/15 px-3 py-1.5 text-sm text-sky-200 hover:bg-sky-500/25"
+          >
+            LinkedIn pipeline
+          </button>
+          <button
+            type="button"
+            onClick={handleRunScan}
+            className="rounded border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-sm text-emerald-200 hover:bg-emerald-500/25"
+          >
+            Run scan
+          </button>
+        </div>
       </header>
+      <LinkedinPipelineModal
+        open={linkedinModalOpen}
+        onClose={() => setLinkedinModalOpen(false)}
+      />
 
       <div className="sticky top-0 z-10 -mx-2 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-2 backdrop-blur">
         <input

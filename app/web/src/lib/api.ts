@@ -4,6 +4,9 @@ import type {
   ApplicationsListQuery,
   ApplicationsListResponse,
   JobStartResponse,
+  PipelineRecord,
+  PipelineStartRequest,
+  PipelineStartResponse,
   ReportDetail,
 } from "@job-seeker/shared";
 
@@ -84,4 +87,34 @@ export async function startFullReportJob(reportId: string): Promise<JobStartResp
 
 export async function cancelJob(jobId: string): Promise<void> {
   await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+}
+
+export async function startLinkedinPipeline(
+  body: PipelineStartRequest,
+): Promise<PipelineStartResponse> {
+  return jsonFetch<PipelineStartResponse>(`/api/jobs/linkedin/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function resumeLinkedinPipeline(
+  pipelineId: string,
+  fromStage?: number,
+): Promise<PipelineStartResponse> {
+  return jsonFetch<PipelineStartResponse>(
+    `/api/jobs/linkedin/${encodeURIComponent(pipelineId)}/resume`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fromStage !== undefined ? { fromStage } : {}),
+    },
+  );
+}
+
+export async function getLinkedinPipeline(pipelineId: string): Promise<PipelineRecord> {
+  return jsonFetch<PipelineRecord>(
+    `/api/jobs/linkedin/${encodeURIComponent(pipelineId)}`,
+  );
 }

@@ -24,6 +24,7 @@ const SAVED_URL = 'https://www.linkedin.com/my-items/saved-jobs/';
 
 const args = new Set(process.argv.slice(2));
 const LOGIN_MODE = args.has('--login');
+const AUTO_MODE = args.has('--auto');
 const HEADFUL = args.has('--headful') || LOGIN_MODE;
 
 function sleep(ms) {
@@ -46,10 +47,20 @@ async function loginAndSave() {
   await browser.close();
 }
 
-async function scrapeSavedJobs() {
+async function scrapeSavedJobs(autoLoginAttempts = 0) {
   if (!existsSync(AUTH_FILE)) {
-    console.error(`[scrape] no auth file at ${AUTH_FILE} — run with --login first`);
-    process.exit(1);
+    if (AUTO_MODE) {
+      if (autoLoginAttempts >= 1) {
+        console.error('[auto] login flow ran but auth file is still missing — bailing');
+        process.exit(3);
+      }
+      console.log('[auto] no auth file — opening visible browser for login');
+      await loginAndSave();
+      return scrapeSavedJobs(autoLoginAttempts + 1);
+    } else {
+      console.error(`[scrape] no auth file at ${AUTH_FILE} — run with --login first`);
+      process.exit(1);
+    }
   }
   console.log(`[scrape] launching ${HEADFUL ? 'visible' : 'headless'} browser`);
   const browser = await chromium.launch({ headless: !HEADFUL });
@@ -58,10 +69,19 @@ async function scrapeSavedJobs() {
   await page.goto(SAVED_URL, { waitUntil: 'domcontentloaded' });
   await sleep(2500);
 
-  // If we got bounced to login, bail clearly
+  // If we got bounced to login, either prompt re-login (auto mode) or bail.
   if (/\/login|\/checkpoint/.test(page.url())) {
-    console.error('[scrape] session expired — re-run with --login');
     await browser.close();
+    if (AUTO_MODE && autoLoginAttempts < 1) {
+      console.log('[auto] session expired — opening visible browser for re-login');
+      await loginAndSave();
+      return scrapeSavedJobs(autoLoginAttempts + 1);
+    }
+    if (AUTO_MODE) {
+      console.error('[auto] still bounced to login after re-auth attempt — bailing');
+      process.exit(3);
+    }
+    console.error('[scrape] session expired — re-run with --login');
     process.exit(2);
   }
 

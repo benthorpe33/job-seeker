@@ -40,6 +40,7 @@ export type JobKind =
   | "batch"
   | "linkedin-saved-jobs"
   | "linkedin-build-input"
+  | "prefetch-jds"
   | "merge-tracker"
   | "verify-pipeline"
   | "pdf"
@@ -131,3 +132,47 @@ export type JobLogPanelEntry = {
   startedAt: string;
   status: JobStatus;
 };
+
+export type PipelineStageStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export type PipelineStage = {
+  stageNum: number;
+  name: string;
+  kind: JobKind | null;
+  status: PipelineStageStatus;
+  jobId: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  exitCode: number | null;
+  errorMessage: string | null;
+};
+
+export type PipelineRecord = {
+  pipelineId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "completed" | "failed";
+  failedAtStage: number | null;
+  prefetchJds: boolean;
+  stages: PipelineStage[];
+};
+
+export type PipelineStartRequest = {
+  prefetchJds?: boolean;
+};
+
+export type PipelineStartResponse = {
+  pipelineId: string;
+  startedAt: string;
+  stages: PipelineStage[];
+};
+
+export type PipelineEvent =
+  | { type: "stage:start"; stage: PipelineStage }
+  | { type: "stage:done"; stage: PipelineStage }
+  | { type: "pipeline:done"; pipeline: PipelineRecord };
