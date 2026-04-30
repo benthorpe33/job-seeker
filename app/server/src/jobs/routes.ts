@@ -9,7 +9,7 @@ import type {
 import { REPO_ROOT } from "../env.js";
 import { isJobKind, listJobKinds, resolveKind } from "./kinds.js";
 import { JobRegistry } from "./registry.js";
-import { cancelJob, detectBash, spawnJob } from "./runner.js";
+import { cancelJob, spawnJob } from "./runner.js";
 import { streamJobLogs } from "./sse.js";
 
 declare module "fastify" {
@@ -19,23 +19,14 @@ declare module "fastify" {
   }
 }
 
+// jobsPlugin only registers routes; the `jobs` and `jobsBashPath` decorators
+// must be added to the root app in main.ts before any sibling plugin is
+// registered. Decorating inside this plugin would scope them to its
+// encapsulation context, hiding them from cvOrchestrator / linkedinPipeline /
+// other API plugins registered as siblings.
 export const jobsPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
-  const registry = new JobRegistry();
-  registry.startCleanup();
-  const bashPath = detectBash();
-  app.decorate("jobs", registry);
-  app.decorate("jobsBashPath", bashPath);
-  if (!bashPath) {
-    app.log.warn(
-      "bash not found on PATH; bash-based job kinds (batch, full-report) will be rejected with 503 until bash is available.",
-    );
-  } else {
-    app.log.info(`bash resolved at ${bashPath}`);
-  }
-
-  app.addHook("onClose", async () => {
-    registry.stopCleanup();
-  });
+  const registry = app.jobs;
+  const bashPath = app.jobsBashPath;
 
   app.post<{
     Params: { kind: string };

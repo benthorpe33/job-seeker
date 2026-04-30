@@ -6,7 +6,9 @@ import { HOST, PORT, REPO_ROOT, SERVER_VERSION } from "./env.js";
 import { openDb } from "./index/db.js";
 import { rebuildIndex } from "./index/rebuild.js";
 import { startWatcher } from "./index/watcher.js";
+import { JobRegistry } from "./jobs/registry.js";
 import { jobsPlugin } from "./jobs/routes.js";
+import { detectBash } from "./jobs/runner.js";
 import { apiPlugin } from "./api/routes.js";
 
 const startedAt = new Date().toISOString();
@@ -25,6 +27,26 @@ async function buildServer() {
     origin: ["http://127.0.0.1:5173", "http://localhost:5173"],
     methods: ["GET", "POST", "PATCH", "DELETE"],
     credentials: false,
+  });
+
+  // Decorate `app.jobs` and `app.jobsBashPath` at the ROOT scope so they're
+  // visible to every sibling plugin (jobsPlugin, apiPlugin and its children).
+  // Decorating inside jobsPlugin would scope them to that plugin's
+  // encapsulation context only.
+  const registry = new JobRegistry();
+  registry.startCleanup();
+  const bashPath = detectBash();
+  app.decorate("jobs", registry);
+  app.decorate("jobsBashPath", bashPath);
+  if (!bashPath) {
+    app.log.warn(
+      "bash not found on PATH; bash-based job kinds (batch, full-report) will be rejected with 503 until bash is available.",
+    );
+  } else {
+    app.log.info(`bash resolved at ${bashPath}`);
+  }
+  app.addHook("onClose", async () => {
+    registry.stopCleanup();
   });
 
   await app.register(jobsPlugin);
