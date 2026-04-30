@@ -400,6 +400,28 @@ extract_stub_from_json() {
   echo "$json" | sed -nE 's/.*"stub":[[:space:]]*(true|false).*/\1/p' | head -1
 }
 
+extract_status_from_json() {
+  local json="$1"
+  echo "$json" | sed -nE 's/.*"status":[[:space:]]*"([a-z]+)".*/\1/p' | head -1
+}
+
+extract_error_from_json() {
+  local json="$1"
+  echo "$json" | sed -nE 's/.*"error":[[:space:]]*"([^"]+)".*/\1/p' | head -1
+}
+
+# js-hjz: A worker can exit 0 (and even claim status=completed) without ever
+# writing the report file. Verify the report exists on disk before trusting
+# the worker's self-report. Caller iterates report_num glob.
+report_file_exists() {
+  local report_num="$1"
+  local f
+  for f in "$REPORTS_DIR/${report_num}-"*.md; do
+    [[ -f "$f" ]] && return 0
+  done
+  return 1
+}
+
 # Process a single offer — two sequential claude -p calls (triage, then full if score ≥ threshold).
 process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
@@ -480,17 +502,42 @@ process_offer() {
     return
   fi
 
-  local triage_json triage_score triage_stub
+  local triage_json triage_score triage_stub triage_status
   triage_json=$(extract_last_status_json "$triage_log")
   triage_score=$(extract_score_from_json "$triage_json")
   triage_stub=$(extract_stub_from_json "$triage_json")
+  triage_status=$(extract_status_from_json "$triage_json")
   triage_score="${triage_score:--}"
+
+  # js-hjz: worker can exit 0 yet self-report status=failed in JSON. Trust the
+  # JSON over the exit code.
+  if [[ "$triage_status" == "failed" ]]; then
+    local completed_at err
+    completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    err=$(extract_error_from_json "$triage_json")
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage(self): ${err:-no detail}" "$retries"
+    echo "    ❌ Triage worker self-reported failure: ${err:-(no detail)}"
+    rm -f "$facts_pack_file" "$phase1_file"
+    return
+  fi
 
   # If the triage worker decided this is a stub (score < threshold), it has
   # already written the report + tracker line. We're done.
   if [[ "$triage_stub" == "true" ]]; then
     local completed_at
     completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # js-hjz: stub=true must be backed by a real report file on disk. Without
+    # this guard, a worker that emits stub-completed JSON but fails to write
+    # the file leaves state=completed pointing at nothing.
+    if ! report_file_exists "$report_num"; then
+      retries=$((retries + 1))
+      update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: stub=true exit 0 but report file missing" "$retries"
+      echo "    ❌ Triage stub claimed completed but report file missing for $report_num"
+      rm -f "$facts_pack_file" "$phase1_file"
+      return
+    fi
 
     # Min-score gate — if set, mark sub-min-score stubs as "skipped" so they
     # don't count as completed evaluations.
@@ -553,10 +600,30 @@ process_offer() {
     return
   fi
 
-  local full_json full_score
+  local full_json full_score full_status
   full_json=$(extract_last_status_json "$full_log")
   full_score=$(extract_score_from_json "$full_json")
+  full_status=$(extract_status_from_json "$full_json")
   full_score="${full_score:-$triage_score}"
+
+  # js-hjz: full worker can exit 0 yet self-report status=failed (e.g. Phase-1
+  # metadata mismatch). Honor the worker's verdict.
+  if [[ "$full_status" == "failed" ]]; then
+    local err
+    err=$(extract_error_from_json "$full_json")
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$full_score" "full(self): ${err:-no detail}" "$retries"
+    echo "    ❌ Full worker self-reported failure: ${err:-(no detail)}"
+    return
+  fi
+
+  # js-hjz: a successful full pass must produce a report file on disk.
+  if ! report_file_exists "$report_num"; then
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$full_score" "full: exit 0 but report file missing" "$retries"
+    echo "    ❌ Full pass exit 0 but report file missing for $report_num"
+    return
+  fi
 
   # Min-score gate on the refined score
   if [[ "$full_score" != "-" && -n "$full_score" ]] && awk "BEGIN{exit!($MIN_SCORE>0)}"; then
