@@ -8,7 +8,7 @@ import rehypeHighlight from "rehype-highlight";
 
 import type { ApplicationRow, IndexBusEvent, ReportDetail } from "@job-seeker/shared";
 
-import { getReport, startGenerateCvJob } from "../lib/api";
+import { getReport, startFullReportJob, startGenerateCvJob } from "../lib/api";
 import { useSSE } from "../lib/sse";
 import { ensureJobSubscription } from "../lib/jobSubscriptions";
 import { useJobStore } from "../lib/store";
@@ -35,6 +35,36 @@ function DisabledButton({ label, hint }: { label: string; hint: string }) {
     >
       {label}
       <span className="ml-1 text-slate-600">· {hint}</span>
+    </button>
+  );
+}
+
+function PromoteToFullButton({
+  running,
+  onClick,
+}: {
+  running: boolean;
+  onClick: () => void;
+}) {
+  if (running) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="cursor-not-allowed rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-left text-xs text-amber-300"
+      >
+        Promote to full<span className="ml-1 text-amber-500/70">· running…</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-left text-xs text-amber-200 hover:bg-amber-500/25"
+    >
+      Promote to full
+      <span className="ml-1 text-amber-300/70">· runs Opus eval</span>
     </button>
   );
 }
@@ -102,10 +132,15 @@ export function Report() {
   });
 
   const [cvJobId, setCvJobId] = useState<string | null>(null);
+  const [fullReportJobId, setFullReportJobId] = useState<string | null>(null);
   const cvJob = useJobStore((s) => (cvJobId ? s.activeJobs.get(cvJobId) ?? null : null));
+  const fullReportJob = useJobStore((s) =>
+    fullReportJobId ? s.activeJobs.get(fullReportJobId) ?? null : null,
+  );
   const registerJob = useJobStore((s) => s.registerJob);
   const openPanel = useJobStore((s) => s.openPanel);
   const cvJobRunning = cvJob?.status === "running";
+  const fullReportJobRunning = fullReportJob?.status === "running";
 
   const num = query.data?.num ?? null;
   const appQuery = useQuery<ApplicationRow>({
@@ -186,6 +221,26 @@ export function Report() {
       setCvJobId(res.jobId);
     } catch (err) {
       alert(`Failed to start CV generation: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function handlePromoteToFull() {
+    if (fullReportJobRunning) return;
+    const score = query.data?.header.score ?? null;
+    const scoreText = score !== null ? `${score}/5` : "unknown";
+    const ok = window.confirm(
+      `Re-run the full Opus evaluation for this stub (current score ${scoreText})?\n\n` +
+        `Uses ~$0.10–$0.25 in tokens and takes ~3–5 min. The existing report file will be overwritten with full Blocks A–G and a refined score.`,
+    );
+    if (!ok) return;
+    try {
+      const res = await startFullReportJob(id);
+      registerJob({ jobId: res.jobId, kind: res.kind, startedAt: res.startedAt });
+      ensureJobSubscription(res.jobId);
+      openPanel(res.jobId);
+      setFullReportJobId(res.jobId);
+    } catch (err) {
+      alert(`Failed to start full-report job: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -316,7 +371,10 @@ export function Report() {
               onClick={() => void handleGenerateCv()}
             />
             {r.header.score !== null && r.header.score < 3.5 && (
-              <DisabledButton label="Promote to full" hint="Coming in T7" />
+              <PromoteToFullButton
+                running={fullReportJobRunning}
+                onClick={() => void handlePromoteToFull()}
+              />
             )}
             <DisabledButton label="Draft answers" hint="Coming in T9" />
           </div>

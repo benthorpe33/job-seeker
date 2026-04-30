@@ -9,6 +9,7 @@ export type ApplicationsMdMutation = {
   notes?: string;
   date?: string;
   pdf?: string;
+  score?: string;
 };
 
 export type ApplicationsMdRow = {
@@ -112,6 +113,7 @@ export function applyMutation(row: ApplicationsMdRow, mut: ApplicationsMdMutatio
   if (mut.notes !== undefined) next.notes = mut.notes;
   if (mut.date !== undefined) next.date = mut.date;
   if (mut.pdf !== undefined) next.pdf = mut.pdf;
+  if (mut.score !== undefined) next.score = mut.score;
   next.rawLine = buildRowLine(next);
   return next;
 }
