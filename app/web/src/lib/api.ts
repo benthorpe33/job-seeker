@@ -66,6 +66,14 @@ export async function startScanJob(): Promise<JobStartResponse> {
   });
 }
 
+export async function startGenerateCvJob(reportId: string): Promise<JobStartResponse> {
+  return jsonFetch<JobStartResponse>(`/api/jobs/generate-cv/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reportId }),
+  });
+}
+
 export async function cancelJob(jobId: string): Promise<void> {
   await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
 }

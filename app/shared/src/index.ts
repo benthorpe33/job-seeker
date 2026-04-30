@@ -43,6 +43,7 @@ export type JobKind =
   | "merge-tracker"
   | "verify-pipeline"
   | "pdf"
+  | "generate-cv"
   | "full-report"
   | "liveness";
 

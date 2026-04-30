@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
@@ -8,8 +8,10 @@ import rehypeHighlight from "rehype-highlight";
 
 import type { ApplicationRow, IndexBusEvent, ReportDetail } from "@job-seeker/shared";
 
-import { getReport } from "../lib/api";
+import { getReport, startGenerateCvJob } from "../lib/api";
 import { useSSE } from "../lib/sse";
+import { ensureJobSubscription } from "../lib/jobSubscriptions";
+import { useJobStore } from "../lib/store";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { StatusMenu } from "../components/StatusMenu";
 
@@ -37,6 +39,58 @@ function DisabledButton({ label, hint }: { label: string; hint: string }) {
   );
 }
 
+function GenerateCvButton({
+  hasPdf,
+  running,
+  onClick,
+}: {
+  hasPdf: boolean;
+  running: boolean;
+  onClick: () => void;
+}) {
+  if (running) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="cursor-not-allowed rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-left text-xs text-sky-300"
+      >
+        Generate CV<span className="ml-1 text-sky-500/70">· running…</span>
+      </button>
+    );
+  }
+  if (hasPdf) {
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          disabled
+          title="A tailored PDF already exists for this report."
+          className="cursor-not-allowed rounded border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-left text-xs text-slate-500"
+        >
+          Generate CV<span className="ml-1 text-emerald-500">· ✓ already generated</span>
+        </button>
+        <button
+          type="button"
+          onClick={onClick}
+          className="self-start rounded px-1 py-0.5 text-[11px] text-sky-400 hover:underline"
+        >
+          regenerate?
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-left text-xs text-emerald-200 hover:bg-emerald-500/25"
+    >
+      Generate CV
+    </button>
+  );
+}
+
 export function Report() {
   const { id = "" } = useParams<{ id: string }>();
   const qc = useQueryClient();
@@ -46,6 +100,12 @@ export function Report() {
     queryFn: () => getReport(id),
     refetchOnWindowFocus: false,
   });
+
+  const [cvJobId, setCvJobId] = useState<string | null>(null);
+  const cvJob = useJobStore((s) => (cvJobId ? s.activeJobs.get(cvJobId) ?? null : null));
+  const registerJob = useJobStore((s) => s.registerJob);
+  const openPanel = useJobStore((s) => s.openPanel);
+  const cvJobRunning = cvJob?.status === "running";
 
   const num = query.data?.num ?? null;
   const appQuery = useQuery<ApplicationRow>({
@@ -108,6 +168,26 @@ export function Report() {
     document.querySelectorAll("[data-block-anchor]").forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, [query.data]);
+
+  async function handleGenerateCv() {
+    if (cvJobRunning) return;
+    const score = query.data?.header.score ?? null;
+    if (score !== null && score < 3.5) {
+      const ok = window.confirm(
+        `This report scored ${score}/5. The default policy is not to apply below 3.5 — generate a tailored CV anyway?`,
+      );
+      if (!ok) return;
+    }
+    try {
+      const res = await startGenerateCvJob(id);
+      registerJob({ jobId: res.jobId, kind: res.kind, startedAt: res.startedAt });
+      ensureJobSubscription(res.jobId);
+      openPanel(res.jobId);
+      setCvJobId(res.jobId);
+    } catch (err) {
+      alert(`Failed to start CV generation: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   if (query.isLoading) {
     return <p className="p-6 text-slate-400">Loading report…</p>;
@@ -230,7 +310,11 @@ export function Report() {
             Actions
           </h3>
           <div className="flex flex-col gap-2">
-            <DisabledButton label="Generate CV" hint="Coming in T6" />
+            <GenerateCvButton
+              hasPdf={appQuery.data?.hasPdf ?? false}
+              running={cvJobRunning}
+              onClick={() => void handleGenerateCv()}
+            />
             {r.header.score !== null && r.header.score < 3.5 && (
               <DisabledButton label="Promote to full" hint="Coming in T7" />
             )}

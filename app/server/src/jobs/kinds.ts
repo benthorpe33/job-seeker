@@ -82,6 +82,22 @@ const SPECS: Record<JobKind, KindSpec> = {
     }),
     validate: rejectShellMetachars,
   },
+  "generate-cv": {
+    needsBash: true,
+    build: (userArgs) => ({
+      cmd: "bash",
+      args: ["batch/run-generate-cv.sh", ...userArgs],
+    }),
+    validate: (userArgs) => {
+      const err = rejectShellMetachars(userArgs);
+      if (err) return err;
+      // run-generate-cv.sh requires <reportNum> <slug> <date> <url>
+      if (userArgs.length < 4) {
+        return "generate-cv kind requires 4 args: <reportNum> <slug> <date> <url>";
+      }
+      return null;
+    },
+  },
   liveness: {
     needsBash: false,
     build: (userArgs) => ({
