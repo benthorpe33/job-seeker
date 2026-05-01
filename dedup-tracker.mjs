@@ -2,44 +2,34 @@
 /**
  * dedup-tracker.mjs — Remove duplicate entries from applications.md
  *
- * Groups by normalized company + fuzzy role match.
- * Keeps entry with highest score. If discarded entry had more advanced status,
- * preserves that status. Merges notes.
+ * Groups by normalized company + fuzzy role match, then gates collapse on
+ * the report `**URL:**` header. A fuzzy match is only collapsed when both
+ * rows' reports resolve to the same URL. When URLs differ, the rows are
+ * kept apart even if the role text fuzzy-matches.
+ *
+ * Keeps entry with highest score. If a discarded entry had a more advanced
+ * status, that status is promoted onto the keeper. Notes are not merged.
  *
  * Run: node career-ops/dedup-tracker.mjs [--dry-run]
  *
- * ⚠️  KNOWN LIMITATIONS — ALWAYS review --dry-run output before applying.
- *
- * The script dedups on normalized company + fuzzy role match (≥2 shared
- * non-stopword tokens, ≥60% overlap ratio of the shorter role). It does
- * NOT inspect the report URL, so it has high false-positive rates when a
- * company has multiple adjacent but distinct reqs. Confirmed false
- * positives observed 2026-04-23:
+ * URL-aware tightening (js-a8r): the older fuzzy-only heuristic produced
+ * false positives whenever a company had multiple adjacent-but-distinct
+ * reqs. Examples we caught in the wild:
  *
  *   - "Partner Solutions Architect" vs "Solutions Architect" (Glean)
- *     → different reqs (enterprise/partner vs post-sale), different URLs
+ *     → different reqs (enterprise/partner vs post-sale)
  *   - "Data Scientist, Core Data - PhD (2026)" vs "Data Scientist" (Figma)
- *     → PhD cohort vs general DS, different URLs
+ *     → PhD cohort vs general DS
  *   - "Forward Deployed Banker" vs "Forward Deployed Investor" (Hebbia)
  *     → different roles despite fuzzy-matching on "forward deployed"
  *   - "Applied AI Engineer (Digital Natives Business)" vs
  *     "Forward Deployed Engineer, Applied AI (Digital Natives)" (Anthropic)
- *     → two different Anthropic reqs with different job IDs (5057647008
- *       vs 4985877008); report 051 explicitly notes they're distinct
+ *     → two different Anthropic reqs with different job IDs
  *
- * True duplicates (same URL, same req evaluated twice) DO get collapsed
- * correctly — that is the script's real use case.
- *
- * Recommended usage:
- *   1. Run `node dedup-tracker.mjs --dry-run`
- *   2. For each proposed removal, open the two reports and compare the
- *      `**URL:**` header lines. If URLs differ → do NOT remove.
- *   3. Manually edit applications.md for the true-duplicate rows and
- *      skip running this script without --dry-run.
- *
- * Tightening idea (not yet implemented): read report files, extract
- * `**URL:**`, only collapse when URLs match OR (company+role match AND
- * report numbers differ by ≤N meaning a near-in-time re-eval).
+ * Each pair has distinct URLs in their report headers, so the URL gate now
+ * keeps them apart. Fallback: when either row's report can't be read or
+ * has no `**URL:**` line, we fall back to the legacy fuzzy-only heuristic
+ * so legacy rows without reports still get deduped.
  */
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
@@ -133,6 +123,35 @@ function parseScore(s) {
   return m ? parseFloat(m[1]) : 0;
 }
 
+// Pull the path out of an applications.md report cell like
+// "[051](reports/051-anthropic-...md)". Returns null if the cell has no
+// markdown link (legacy rows pre-dating the report column).
+function extractReportPath(reportCell) {
+  if (!reportCell) return null;
+  const m = reportCell.match(/\(([^)]+\.md)\)/);
+  return m ? m[1] : null;
+}
+
+// Read a report's `**URL:**` header value. Returns null when the file is
+// missing, unreadable, or has no URL line. Same head-window + regex shape
+// as app/server/src/index/parsers/reportMd.ts so behavior matches the
+// canonical parser.
+function extractReportUrl(reportPath) {
+  if (!reportPath) return null;
+  const abs = join(CAREER_OPS, reportPath);
+  if (!existsSync(abs)) return null;
+  let head;
+  try {
+    head = readFileSync(abs, 'utf-8').split(/\r?\n/).slice(0, 25).join('\n');
+  } catch {
+    return null;
+  }
+  const m = head.match(/\*\*URL:\*\*\s*([^\n]*?)(?=\s*·\s*\*\*|$)/m);
+  if (!m) return null;
+  const v = (m[1] || '').trim();
+  return v.length === 0 ? null : v;
+}
+
 function parseAppLine(line) {
   const parts = line.split('|').map(s => s.trim());
   if (parts.length < 9) return null;
@@ -185,7 +204,16 @@ for (const entry of entries) {
 
 // Find duplicates
 let removed = 0;
+let urlGateBlocked = 0;
 const linesToRemove = new Set();
+// Cache extracted URLs per entry.num so we read each report at most once.
+const urlByNum = new Map();
+function urlFor(entry) {
+  if (urlByNum.has(entry.num)) return urlByNum.get(entry.num);
+  const url = extractReportUrl(extractReportPath(entry.report));
+  urlByNum.set(entry.num, url);
+  return url;
+}
 
 for (const [company, companyEntries] of groups) {
   if (companyEntries.length < 2) continue;
@@ -196,13 +224,24 @@ for (const [company, companyEntries] of groups) {
     if (processed.has(i)) continue;
     const cluster = [companyEntries[i]];
     processed.add(i);
+    const seedUrl = urlFor(companyEntries[i]);
 
     for (let j = i + 1; j < companyEntries.length; j++) {
       if (processed.has(j)) continue;
-      if (roleMatch(companyEntries[i].role, companyEntries[j].role)) {
-        cluster.push(companyEntries[j]);
-        processed.add(j);
+      if (!roleMatch(companyEntries[i].role, companyEntries[j].role)) continue;
+      // URL gate: when both reports resolve to a URL, the candidate must
+      // share it with the seed. If either side is missing a URL we fall
+      // back to fuzzy-only (legacy behavior) so old rows still dedup.
+      const candUrl = urlFor(companyEntries[j]);
+      if (seedUrl && candUrl && seedUrl !== candUrl) {
+        urlGateBlocked++;
+        console.log(
+          `🔒 Keep #${companyEntries[i].num} and #${companyEntries[j].num} apart — fuzzy match but URLs differ (${seedUrl} vs ${candUrl})`,
+        );
+        continue;
       }
+      cluster.push(companyEntries[j]);
+      processed.add(j);
     }
 
     if (cluster.length < 2) continue;
@@ -253,6 +292,9 @@ for (const idx of sortedRemoveIndices) {
 }
 
 console.log(`\n📊 ${removed} duplicates removed`);
+if (urlGateBlocked > 0) {
+  console.log(`🔒 ${urlGateBlocked} fuzzy match(es) kept apart by URL gate`);
+}
 
 if (!DRY_RUN && removed > 0) {
   copyFileSync(APPS_FILE, APPS_FILE + '.bak');
