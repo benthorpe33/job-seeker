@@ -68,9 +68,18 @@ export type JobRecord = {
   jobId: string;
   kind: JobKind;
   startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
   status: JobStatus;
   exitCode: number | null;
   signal: string | null;
+};
+
+export type JobsFilterStatus = "active" | "completed" | "all";
+
+export type CancelAllResponse = {
+  requested: number;
+  jobIds: string[];
 };
 
 export type JobLogEvent = JobLogLine & { id: number };
@@ -103,6 +112,19 @@ export type JobLogResponse = {
   ringSize: number;
   ringTruncated: boolean;
   events: JobLogEvent[];
+};
+
+export type PersistedJob = {
+  jobId: string;
+  kind: JobKind;
+  startedAt: string;
+  startedAtMs: number;
+  finishedAtMs: number | null;
+  status: JobStatus;
+  exitCode: number | null;
+  signal: string | null;
+  nextLineId: number;
+  ring: JobLogEvent[];
 };
 
 export type ApplicationsListQuery = {

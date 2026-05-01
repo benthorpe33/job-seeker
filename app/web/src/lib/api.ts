@@ -3,7 +3,10 @@ import type {
   ApplicationRow,
   ApplicationsListQuery,
   ApplicationsListResponse,
+  CancelAllResponse,
+  JobListResponse,
   JobLogResponse,
+  JobsFilterStatus,
   JobStartResponse,
   PipelineRecord,
   PipelineStartRequest,
@@ -101,6 +104,21 @@ export async function getJobLog(
   return jsonFetch<JobLogResponse>(
     `/api/jobs/${encodeURIComponent(jobId)}/log${qs ? `?${qs}` : ""}`,
   );
+}
+
+export async function listJobs(
+  filter?: JobsFilterStatus,
+): Promise<JobListResponse> {
+  const qs = filter ? `?status=${encodeURIComponent(filter)}` : "";
+  return jsonFetch<JobListResponse>(`/api/jobs${qs}`);
+}
+
+export async function cancelAllJobs(): Promise<CancelAllResponse> {
+  return jsonFetch<CancelAllResponse>(`/api/jobs/cancel-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
 }
 
 export async function startLinkedinPipeline(

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 
@@ -6,10 +8,13 @@ import { HOST, PORT, REPO_ROOT, SERVER_VERSION } from "./env.js";
 import { openDb } from "./index/db.js";
 import { rebuildIndex } from "./index/rebuild.js";
 import { startWatcher } from "./index/watcher.js";
+import { loadJobsFile, saveJobsFile } from "./jobs/persistence.js";
 import { JobRegistry } from "./jobs/registry.js";
 import { jobsPlugin } from "./jobs/routes.js";
 import { detectBash } from "./jobs/runner.js";
 import { apiPlugin } from "./api/routes.js";
+
+const JOBS_FILE = path.join(REPO_ROOT, "app/server/.data/jobs.json");
 
 const startedAt = new Date().toISOString();
 
@@ -34,6 +39,15 @@ async function buildServer() {
   // Decorating inside jobsPlugin would scope them to that plugin's
   // encapsulation context only.
   const registry = new JobRegistry();
+  try {
+    const persisted = await loadJobsFile(JOBS_FILE);
+    const loaded = registry.loadPersisted(persisted);
+    if (loaded > 0) {
+      app.log.info(`restored ${loaded} job(s) from ${JOBS_FILE}`);
+    }
+  } catch (err) {
+    app.log.warn({ err }, `failed to load persisted jobs from ${JOBS_FILE}`);
+  }
   registry.startCleanup();
   const bashPath = detectBash();
   app.decorate("jobs", registry);
@@ -47,6 +61,11 @@ async function buildServer() {
   }
   app.addHook("onClose", async () => {
     registry.stopCleanup();
+    try {
+      await saveJobsFile(JOBS_FILE, registry.serializeForPersist());
+    } catch (err) {
+      app.log.warn({ err }, `failed to persist jobs to ${JOBS_FILE}`);
+    }
   });
 
   await app.register(jobsPlugin);

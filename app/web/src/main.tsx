@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { Tracker } from "./routes/Tracker";
 import { Report } from "./routes/Report";
+import { Jobs } from "./routes/Jobs";
 import "highlight.js/styles/github-dark.css";
 import "./index.css";
 
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Tracker /> },
       { path: "reports/:id", element: <Report /> },
+      { path: "jobs", element: <Jobs /> },
     ],
   },
 ]);

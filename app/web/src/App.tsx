@@ -1,10 +1,12 @@
-import { Outlet } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 
 import { JobLogPanel } from "./components/JobLogPanel";
 import { useJobSubscriptions } from "./lib/jobSubscriptions";
+import { useActiveJobsCount } from "./lib/jobs";
 
 export default function App() {
   useJobSubscriptions();
+  const activeJobsCount = useActiveJobsCount();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -18,6 +20,23 @@ export default function App() {
             </h1>
             <p className="text-xs text-slate-500">Local UI · loopback only</p>
           </div>
+          <Link
+            to="/jobs"
+            className={
+              activeJobsCount > 0
+                ? "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20"
+                : "rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:bg-slate-800"
+            }
+            title={
+              activeJobsCount > 0
+                ? `${activeJobsCount} active job${activeJobsCount === 1 ? "" : "s"}`
+                : "No active jobs"
+            }
+          >
+            {activeJobsCount > 0
+              ? `● ${activeJobsCount} ${activeJobsCount === 1 ? "job" : "jobs"} running`
+              : "View jobs"}
+          </Link>
         </header>
         <Outlet />
       </div>

@@ -7,11 +7,13 @@ import type {
   JobLogEvent,
   JobRecord,
   JobStatus,
+  PersistedJob,
 } from "@job-seeker/shared";
 
 const RING_BUFFER_MAX = 1000;
 const COMPLETED_TTL_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const PERSIST_MAX = 50;
 
 export type Job = {
   jobId: string;
@@ -124,6 +126,57 @@ export class JobRegistry {
     job.emitter.emit("done", done);
   }
 
+  serializeForPersist(): PersistedJob[] {
+    const finished: Job[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status !== "running" && job.finishedAtMs !== null) {
+        finished.push(job);
+      }
+    }
+    finished.sort(
+      (a, b) => (b.finishedAtMs ?? 0) - (a.finishedAtMs ?? 0),
+    );
+    return finished.slice(0, PERSIST_MAX).map((job) => ({
+      jobId: job.jobId,
+      kind: job.kind,
+      startedAt: job.startedAt,
+      startedAtMs: job.startedAtMs,
+      finishedAtMs: job.finishedAtMs,
+      status: job.status,
+      exitCode: job.exitCode,
+      signal: job.signal,
+      nextLineId: job.nextLineId,
+      ring: [...job.ring],
+    }));
+  }
+
+  loadPersisted(persisted: PersistedJob[]): number {
+    let loaded = 0;
+    for (const p of persisted) {
+      if (this.jobs.has(p.jobId)) continue;
+      if (p.status === "running") continue; // never restore "running" — children are gone
+      const emitter = new EventEmitter();
+      emitter.setMaxListeners(50);
+      this.jobs.set(p.jobId, {
+        jobId: p.jobId,
+        kind: p.kind,
+        startedAt: p.startedAt,
+        startedAtMs: p.startedAtMs,
+        finishedAtMs: p.finishedAtMs,
+        status: p.status,
+        exitCode: p.exitCode,
+        signal: p.signal,
+        child: null,
+        ring: [...p.ring],
+        nextLineId: p.nextLineId,
+        emitter,
+        cancelTimer: null,
+      });
+      loaded++;
+    }
+    return loaded;
+  }
+
   private evictOld(): void {
     const cutoff = Date.now() - COMPLETED_TTL_MS;
     for (const [id, job] of this.jobs) {
@@ -140,10 +193,16 @@ export class JobRegistry {
 }
 
 export function toRecord(job: Job): JobRecord {
+  const finishedAt =
+    job.finishedAtMs !== null ? new Date(job.finishedAtMs).toISOString() : null;
+  const durationMs =
+    job.finishedAtMs !== null ? job.finishedAtMs - job.startedAtMs : null;
   return {
     jobId: job.jobId,
     kind: job.kind,
     startedAt: job.startedAt,
+    finishedAt,
+    durationMs,
     status: job.status,
     exitCode: job.exitCode,
     signal: job.signal,

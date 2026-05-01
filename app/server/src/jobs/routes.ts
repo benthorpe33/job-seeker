@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 
 import type {
+  CancelAllResponse,
   JobListResponse,
   JobLogResponse,
+  JobsFilterStatus,
   JobStartRequest,
   JobStartResponse,
 } from "@job-seeker/shared";
@@ -92,9 +94,61 @@ export const jobsPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
     },
   );
 
-  app.get("/api/jobs", async (): Promise<JobListResponse> => {
-    return { jobs: registry.list() };
+  app.get<{
+    Querystring: { status?: JobsFilterStatus };
+  }>("/api/jobs", async (request): Promise<JobListResponse> => {
+    const filter = request.query.status;
+    const all = registry.list();
+    if (filter === "active") {
+      return { jobs: all.filter((j) => j.status === "running") };
+    }
+    if (filter === "completed") {
+      return { jobs: all.filter((j) => j.status !== "running") };
+    }
+    return { jobs: all };
   });
+
+  app.post<{
+    Body: { confirm?: boolean };
+    Reply: CancelAllResponse | { error: string };
+  }>("/api/jobs/cancel-all", async (request, reply) => {
+    if (request.body?.confirm !== true) {
+      return reply.code(400).send({ error: "confirm:true required" });
+    }
+    const jobIds: string[] = [];
+    let isFirst = true;
+    for (const rec of registry.list()) {
+      if (rec.status !== "running") continue;
+      const job = registry.get(rec.jobId);
+      if (!job) continue;
+      if (!isFirst) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      isFirst = false;
+      cancelJob(job);
+      jobIds.push(job.jobId);
+    }
+    return reply
+      .code(202)
+      .send({ requested: jobIds.length, jobIds });
+  });
+
+  app.get<{ Params: { jobId: string } }>(
+    "/api/jobs/:jobId/logs",
+    async (request, reply) => {
+      const job = registry.get(request.params.jobId);
+      if (!job) {
+        return reply.code(404).send({ error: "job not found" });
+      }
+      const lines = job.ring
+        .map((e) => `${e.ts} [${e.stream}] ${e.line}`)
+        .join("\n");
+      reply
+        .code(200)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .send(lines + (lines.length > 0 ? "\n" : ""));
+    },
+  );
 
   app.get<{
     Params: { jobId: string };
