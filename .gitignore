@@ -76,3 +76,6 @@ package-lock.json
 # IDE
 .vscode/
 .idea/
+
+# Playwright MCP local artifacts (snapshots, console logs, screenshots)
+.playwright-mcp/

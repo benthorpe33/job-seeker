@@ -57,7 +57,7 @@ export const STAGE_DEFS_BASE: ReadonlyArray<StageDef> = [
     stageNum: 4,
     name: "Run batch evaluations",
     kind: "batch",
-    args: ["--parallel=2"],
+    args: ["--parallel", "2"],
   },
   {
     stageNum: 5,
