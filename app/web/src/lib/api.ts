@@ -3,6 +3,7 @@ import type {
   ApplicationRow,
   ApplicationsListQuery,
   ApplicationsListResponse,
+  JobLogResponse,
   JobStartResponse,
   PipelineRecord,
   PipelineStartRequest,
@@ -87,6 +88,19 @@ export async function startFullReportJob(reportId: string): Promise<JobStartResp
 
 export async function cancelJob(jobId: string): Promise<void> {
   await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+}
+
+export async function getJobLog(
+  jobId: string,
+  opts?: { tail?: number; stream?: "stdout" | "stderr" },
+): Promise<JobLogResponse> {
+  const params = new URLSearchParams();
+  if (opts?.tail !== undefined) params.set("tail", String(opts.tail));
+  if (opts?.stream) params.set("stream", opts.stream);
+  const qs = params.toString();
+  return jsonFetch<JobLogResponse>(
+    `/api/jobs/${encodeURIComponent(jobId)}/log${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export async function startLinkedinPipeline(

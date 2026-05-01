@@ -95,6 +95,16 @@ export type JobListResponse = {
   jobs: JobRecord[];
 };
 
+export type JobLogResponse = {
+  jobId: string;
+  kind: JobKind;
+  status: JobStatus;
+  exitCode: number | null;
+  ringSize: number;
+  ringTruncated: boolean;
+  events: JobLogEvent[];
+};
+
 export type ApplicationsListQuery = {
   sort: "score" | "date" | "company" | "role" | "num";
   dir: "asc" | "desc";

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 
 import type {
   JobListResponse,
+  JobLogResponse,
   JobStartRequest,
   JobStartResponse,
 } from "@job-seeker/shared";
@@ -93,6 +94,47 @@ export const jobsPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   app.get("/api/jobs", async (): Promise<JobListResponse> => {
     return { jobs: registry.list() };
+  });
+
+  app.get<{
+    Params: { jobId: string };
+    Querystring: { tail?: string; stream?: "stdout" | "stderr" };
+  }>("/api/jobs/:jobId/log", async (request, reply) => {
+    const job = registry.get(request.params.jobId);
+    if (!job) {
+      return reply.code(404).send({ error: "job not found" });
+    }
+
+    let events = job.ring;
+    if (
+      request.query.stream === "stdout" ||
+      request.query.stream === "stderr"
+    ) {
+      events = events.filter((e) => e.stream === request.query.stream);
+    }
+
+    const tailRaw = request.query.tail;
+    if (tailRaw !== undefined) {
+      const tail = Number.parseInt(tailRaw, 10);
+      if (Number.isFinite(tail) && tail > 0) {
+        events = events.slice(-tail);
+      }
+    }
+
+    // nextLineId starts at 1 and increments per push; if the head id is still
+    // 1 we never spliced, otherwise the ring lost lines off the front.
+    const ringTruncated = (job.ring[0]?.id ?? 1) > 1;
+
+    const body: JobLogResponse = {
+      jobId: job.jobId,
+      kind: job.kind,
+      status: job.status,
+      exitCode: job.exitCode,
+      ringSize: job.ring.length,
+      ringTruncated,
+      events,
+    };
+    return reply.code(200).send(body);
   });
 };
 
