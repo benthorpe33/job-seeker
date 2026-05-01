@@ -176,20 +176,9 @@ export function LinkedinPipelineModal({ open, onClose }: Props) {
               LinkedIn pipeline
             </h2>
             <p className="text-xs text-slate-500">
-              Pulls saved jobs → builds batch → evaluates → merges → verifies.
-              State is in-memory: a server restart will require restarting from
-              stage 1.
-            </p>
-            <p className="mt-1 text-xs text-amber-300/80">
-              Known gap (js-8xx): stage 1's saved-jobs JSON isn't auto-merged
-              into pipeline.md. Run{" "}
-              <code className="rounded bg-slate-800 px-1 font-mono">
-                node scripts/resolve-ats-urls.mjs && node
-                scripts/append-to-pipeline.mjs --yes
-              </code>{" "}
-              between stages 1 and 2 to evaluate LinkedIn-saved postings.
-              Scan-discovered URLs (already in pipeline.md) flow through
-              normally.
+              Pulls saved jobs → resolves ATS URLs → appends to pipeline.md →
+              builds batch → evaluates → merges → verifies. State is in-memory:
+              a server restart will require restarting from stage 1.
             </p>
           </div>
           <button

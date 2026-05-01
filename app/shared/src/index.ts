@@ -39,6 +39,8 @@ export type JobKind =
   | "scan"
   | "batch"
   | "linkedin-saved-jobs"
+  | "resolve-ats-urls"
+  | "append-to-pipeline"
   | "linkedin-build-input"
   | "prefetch-jds"
   | "merge-tracker"

@@ -47,7 +47,7 @@ function buildOpts(
   };
 }
 
-test("pipeline runs all 6 stages on the happy path", async () => {
+test("pipeline runs all 8 stages on the happy path", async () => {
   const root = mkdtempSync(join(tmpdir(), "js-pipeline-"));
   const registry = new JobRegistry();
   try {
@@ -62,7 +62,7 @@ test("pipeline runs all 6 stages on the happy path", async () => {
     const snap = p.snapshot();
     assert.equal(snap.status, "completed");
     assert.equal(snap.failedAtStage, null);
-    assert.deepEqual(completed, [1, 2, 3, 4, 5, 6]);
+    assert.deepEqual(completed, [1, 2, 3, 4, 5, 6, 7, 8]);
     for (const stage of snap.stages) {
       assert.equal(stage.status, "completed", `stage ${stage.stageNum}`);
       assert.equal(stage.exitCode, 0);
@@ -72,18 +72,19 @@ test("pipeline runs all 6 stages on the happy path", async () => {
   }
 });
 
-test("pipeline marks stage 3 skipped when prefetchJds=false", async () => {
-  const root = mkdtempSync(join(tmpdir(), "js-pipeline-skip3-"));
+test("pipeline marks stage 5 (prefetch-jds) skipped when prefetchJds=false", async () => {
+  const root = mkdtempSync(join(tmpdir(), "js-pipeline-skip5-"));
   const registry = new JobRegistry();
   try {
     const p = new LinkedinPipeline(buildOpts(registry, root, makeFactory({})), false);
     await p.run(1);
     const snap = p.snapshot();
     assert.equal(snap.status, "completed");
-    const stage3 = snap.stages.find((s) => s.stageNum === 3)!;
-    assert.equal(stage3.status, "skipped");
-    assert.equal(stage3.jobId, null);
-    for (const num of [1, 2, 4, 5, 6]) {
+    const stage5 = snap.stages.find((s) => s.stageNum === 5)!;
+    assert.equal(stage5.kind, "prefetch-jds");
+    assert.equal(stage5.status, "skipped");
+    assert.equal(stage5.jobId, null);
+    for (const num of [1, 2, 3, 4, 6, 7, 8]) {
       const s = snap.stages.find((x) => x.stageNum === num)!;
       assert.equal(s.status, "completed", `stage ${num} should complete`);
     }
@@ -92,31 +93,31 @@ test("pipeline marks stage 3 skipped when prefetchJds=false", async () => {
   }
 });
 
-test("pipeline halts and skips remaining when stage 4 fails", async () => {
-  const root = mkdtempSync(join(tmpdir(), "js-pipeline-fail4-"));
+test("pipeline halts and skips remaining when stage 6 (batch) fails", async () => {
+  const root = mkdtempSync(join(tmpdir(), "js-pipeline-fail6-"));
   const registry = new JobRegistry();
   try {
     const p = new LinkedinPipeline(
-      buildOpts(registry, root, makeFactory({ 4: "fail" })),
+      buildOpts(registry, root, makeFactory({ 6: "fail" })),
       true,
     );
     await p.run(1);
     const snap = p.snapshot();
     assert.equal(snap.status, "failed");
-    assert.equal(snap.failedAtStage, 4);
-    for (const num of [1, 2, 3]) {
+    assert.equal(snap.failedAtStage, 6);
+    for (const num of [1, 2, 3, 4, 5]) {
       const s = snap.stages.find((x) => x.stageNum === num)!;
       assert.equal(s.status, "completed", `stage ${num} should complete`);
     }
-    const stage4 = snap.stages.find((x) => x.stageNum === 4)!;
-    assert.equal(stage4.status, "failed");
-    assert.equal(stage4.exitCode, 7);
+    const stage6 = snap.stages.find((x) => x.stageNum === 6)!;
+    assert.equal(stage6.status, "failed");
+    assert.equal(stage6.exitCode, 7);
     assert.match(
-      stage4.errorMessage ?? "",
+      stage6.errorMessage ?? "",
       /simulated failure|exit 7/,
       "error message should surface child stderr or exit code",
     );
-    for (const num of [5, 6]) {
+    for (const num of [7, 8]) {
       const s = snap.stages.find((x) => x.stageNum === num)!;
       assert.equal(s.status, "skipped", `stage ${num} should be skipped`);
       assert.equal(s.jobId, null, `stage ${num} should have no jobId`);
@@ -126,13 +127,13 @@ test("pipeline halts and skips remaining when stage 4 fails", async () => {
   }
 });
 
-test("pipeline resume re-runs only stage 4+ without respawning earlier stages", async () => {
+test("pipeline resume re-runs only stage 6+ without respawning earlier stages", async () => {
   const root = mkdtempSync(join(tmpdir(), "js-pipeline-resume-"));
   const registry = new JobRegistry();
   try {
-    // First run: stage 4 fails. Use a mutable behaviors box so we can flip
-    // stage 4 to ok before resume without rebuilding the pipeline.
-    const behaviors: Behaviors = { 4: "fail" };
+    // First run: stage 6 fails. Use a mutable behaviors box so we can flip
+    // stage 6 to ok before resume without rebuilding the pipeline.
+    const behaviors: Behaviors = { 6: "fail" };
     const factory: StageCommandFactory = (def) => {
       const inner = makeFactory(behaviors)(def);
       return inner;
@@ -141,34 +142,31 @@ test("pipeline resume re-runs only stage 4+ without respawning earlier stages", 
     await p.run(1);
     let snap = p.snapshot();
     assert.equal(snap.status, "failed");
-    assert.equal(snap.failedAtStage, 4);
+    assert.equal(snap.failedAtStage, 6);
 
-    const stage1JobId = snap.stages.find((s) => s.stageNum === 1)!.jobId;
-    const stage2JobId = snap.stages.find((s) => s.stageNum === 2)!.jobId;
-    assert.ok(stage1JobId);
-    assert.ok(stage2JobId);
+    const earlierJobIds = [1, 2, 3, 4, 5].map(
+      (n) => snap.stages.find((s) => s.stageNum === n)!.jobId,
+    );
+    for (const id of earlierJobIds) assert.ok(id);
 
-    // Flip stage 4 to ok and resume.
-    behaviors[4] = "ok";
-    await p.run(4);
+    // Flip stage 6 to ok and resume.
+    behaviors[6] = "ok";
+    await p.run(6);
     snap = p.snapshot();
     assert.equal(snap.status, "completed");
     assert.equal(snap.failedAtStage, null);
 
-    assert.equal(
-      snap.stages.find((s) => s.stageNum === 1)!.jobId,
-      stage1JobId,
-      "stage 1 should not have been respawned",
-    );
-    assert.equal(
-      snap.stages.find((s) => s.stageNum === 2)!.jobId,
-      stage2JobId,
-      "stage 2 should not have been respawned",
-    );
+    for (const [idx, num] of [1, 2, 3, 4, 5].entries()) {
+      assert.equal(
+        snap.stages.find((s) => s.stageNum === num)!.jobId,
+        earlierJobIds[idx],
+        `stage ${num} should not have been respawned`,
+      );
+    }
 
-    const stage4 = snap.stages.find((s) => s.stageNum === 4)!;
-    assert.equal(stage4.status, "completed");
-    assert.ok(stage4.jobId);
+    const stage6 = snap.stages.find((s) => s.stageNum === 6)!;
+    assert.equal(stage6.status, "completed");
+    assert.ok(stage6.jobId);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -198,12 +196,12 @@ test("pipeline emits stage:start, stage:done, pipeline:done in order", async () 
 
     assert.equal(log[log.length - 1]!.type, "pipeline:done");
 
-    const stage3Events = log.filter((e) => e.num === 3);
-    assert.equal(stage3Events.length, 1);
-    assert.equal(stage3Events[0]!.type, "stage:done");
-    assert.equal(stage3Events[0]!.status, "skipped");
+    const stage5Events = log.filter((e) => e.num === 5);
+    assert.equal(stage5Events.length, 1);
+    assert.equal(stage5Events[0]!.type, "stage:done");
+    assert.equal(stage5Events[0]!.status, "skipped");
 
-    for (const num of [1, 2, 4, 5, 6]) {
+    for (const num of [1, 2, 3, 4, 6, 7, 8]) {
       const startIdx = log.findIndex(
         (e) => e.type === "stage:start" && e.num === num,
       );
@@ -224,13 +222,13 @@ test("pipeline resume from stage 1 reruns everything including previously-skippe
   try {
     const p = new LinkedinPipeline(buildOpts(registry, root, makeFactory({})), false);
     await p.run(1);
-    const stage3First = p.snapshot().stages.find((s) => s.stageNum === 3)!;
-    assert.equal(stage3First.status, "skipped");
+    const stage5First = p.snapshot().stages.find((s) => s.stageNum === 5)!;
+    assert.equal(stage5First.status, "skipped");
 
     await p.run(1);
-    const stage3Second = p.snapshot().stages.find((s) => s.stageNum === 3)!;
-    assert.equal(stage3Second.status, "skipped", "skipped sticks across runs");
-    assert.equal(stage3Second.jobId, null);
+    const stage5Second = p.snapshot().stages.find((s) => s.stageNum === 5)!;
+    assert.equal(stage5Second.status, "skipped", "skipped sticks across runs");
+    assert.equal(stage5Second.jobId, null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

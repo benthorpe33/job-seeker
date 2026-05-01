@@ -43,30 +43,42 @@ export const STAGE_DEFS_BASE: ReadonlyArray<StageDef> = [
   },
   {
     stageNum: 2,
+    name: "Resolve ATS URLs (slow: ~3-5s/job)",
+    kind: "resolve-ats-urls",
+    args: [],
+  },
+  {
+    stageNum: 3,
+    name: "Append resolved postings to pipeline.md",
+    kind: "append-to-pipeline",
+    args: ["--yes"],
+  },
+  {
+    stageNum: 4,
     name: "Build batch input from pipeline",
     kind: "linkedin-build-input",
     args: [],
   },
   {
-    stageNum: 3,
+    stageNum: 5,
     name: "Pre-fetch JDs (Greenhouse/Ashby)",
     kind: "prefetch-jds",
     args: [],
   },
   {
-    stageNum: 4,
+    stageNum: 6,
     name: "Run batch evaluations",
     kind: "batch",
     args: ["--parallel", "2"],
   },
   {
-    stageNum: 5,
+    stageNum: 7,
     name: "Merge tracker additions",
     kind: "merge-tracker",
     args: [],
   },
   {
-    stageNum: 6,
+    stageNum: 8,
     name: "Verify pipeline integrity",
     kind: "verify-pipeline",
     args: [],
@@ -120,10 +132,10 @@ export class LinkedinPipeline {
     this.pipelineId = randomUUID();
     const stages = STAGE_DEFS_BASE.map((d) => makePendingStage(d));
     if (!prefetchJds) {
-      const stage3 = stages.find((s) => s.stageNum === 3);
-      if (stage3) {
-        stage3.status = "skipped";
-        stage3.errorMessage = "skipped: prefetchJds=false";
+      const prefetchStage = stages.find((s) => s.kind === "prefetch-jds");
+      if (prefetchStage) {
+        prefetchStage.status = "skipped";
+        prefetchStage.errorMessage = "skipped: prefetchJds=false";
       }
     }
     this.record = {
@@ -147,7 +159,7 @@ export class LinkedinPipeline {
   }
 
   /**
-   * Run from `fromStage` (inclusive) through stage 6. Earlier stages are
+   * Run from `fromStage` (inclusive) through stage 8. Earlier stages are
    * preserved as-is; later stages reset to pending unless they're already
    * skipped (prefetchJds=false sticks).
    */

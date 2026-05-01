@@ -42,6 +42,22 @@ const SPECS: Record<JobKind, KindSpec> = {
     }),
     validate: rejectShellMetachars,
   },
+  "resolve-ats-urls": {
+    needsBash: false,
+    build: (userArgs) => ({
+      cmd: "node",
+      args: ["scripts/resolve-ats-urls.mjs", ...userArgs],
+    }),
+    validate: rejectShellMetachars,
+  },
+  "append-to-pipeline": {
+    needsBash: false,
+    build: (userArgs) => ({
+      cmd: "node",
+      args: ["scripts/append-to-pipeline.mjs", ...userArgs],
+    }),
+    validate: rejectShellMetachars,
+  },
   "linkedin-build-input": {
     needsBash: false,
     build: (userArgs) => ({
