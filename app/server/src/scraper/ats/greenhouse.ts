@@ -89,9 +89,12 @@ function mapApiQuestion(q: GreenhouseQuestion, idx: number): ScrapedField | null
 export async function fetchGreenhouseApi(
   handle: ParsedHandle,
 ): Promise<ScrapedField[] | null> {
+  // The questions array hangs off the standard job endpoint behind
+  // ?questions=true. The /questions sub-path returns a generic HTML page,
+  // not JSON, even with status 200.
   const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(
     handle.slug,
-  )}/jobs/${encodeURIComponent(handle.jobId)}/questions`;
+  )}/jobs/${encodeURIComponent(handle.jobId)}?questions=true`;
 
   let res: Response;
   try {
