@@ -210,3 +210,28 @@ export type PipelineEvent =
   | { type: "stage:start"; stage: PipelineStage }
   | { type: "stage:done"; stage: PipelineStage }
   | { type: "pipeline:done"; pipeline: PipelineRecord };
+
+export type AtsKind = "greenhouse" | "ashby" | "lever" | "workday" | "unknown";
+
+export type ScrapedField = {
+  id: string;
+  label: string;
+  type: "text" | "textarea";
+  required: boolean;
+  maxLen?: number;
+};
+
+export type ScrapeResult = {
+  ats: AtsKind;
+  source: "api" | "dom";
+  fields: ScrapedField[];
+  rawHtml?: string;
+  message?: string;
+  error?: string;
+};
+
+export type ScrapeRequest = {
+  applyUrl: string;
+};
+
+export type ScrapeResponse = ScrapeResult;

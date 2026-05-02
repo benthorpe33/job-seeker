@@ -4,7 +4,7 @@
     "outDir": "dist",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "types": ["node"],
     "paths": {
       "@job-seeker/shared": ["../shared/src/index.ts"]
