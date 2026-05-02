@@ -211,7 +211,7 @@ export type PipelineEvent =
   | { type: "stage:done"; stage: PipelineStage }
   | { type: "pipeline:done"; pipeline: PipelineRecord };
 
-export type AtsKind = "greenhouse" | "ashby" | "lever" | "workday" | "unknown";
+export type AtsKind = "greenhouse" | "ashby" | "lever" | "workday" | "paste" | "unknown";
 
 export type ScrapedField = {
   id: string;
@@ -223,7 +223,7 @@ export type ScrapedField = {
 
 export type ScrapeResult = {
   ats: AtsKind;
-  source: "api" | "dom";
+  source: "api" | "dom" | "paste";
   fields: ScrapedField[];
   rawHtml?: string;
   message?: string;
@@ -235,3 +235,10 @@ export type ScrapeRequest = {
 };
 
 export type ScrapeResponse = ScrapeResult;
+
+export type PasteRequest = {
+  html?: string;
+  plainText?: string;
+};
+
+export type PasteResponse = ScrapeResult;

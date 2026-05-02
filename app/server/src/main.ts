@@ -14,6 +14,7 @@ import { jobsPlugin } from "./jobs/routes.js";
 import { detectBash } from "./jobs/runner.js";
 import { apiPlugin } from "./api/routes.js";
 import { closeBrowser } from "./scraper/browser.js";
+import { pastePlugin } from "./scraper/pasteRoutes.js";
 import { scraperPlugin } from "./scraper/routes.js";
 
 const JOBS_FILE = path.join(REPO_ROOT, "app/server/.data/jobs.json");
@@ -72,6 +73,7 @@ async function buildServer() {
 
   await app.register(jobsPlugin);
   await app.register(scraperPlugin);
+  await app.register(pastePlugin);
 
   app.addHook("onClose", async () => {
     await closeBrowser();
