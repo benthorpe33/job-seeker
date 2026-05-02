@@ -48,7 +48,8 @@ export type JobKind =
   | "pdf"
   | "generate-cv"
   | "full-report"
-  | "liveness";
+  | "liveness"
+  | "draft-answers";
 
 export type JobLogLine = {
   ts: string;
@@ -242,3 +243,38 @@ export type PasteRequest = {
 };
 
 export type PasteResponse = ScrapeResult;
+
+export type DraftAnswer = {
+  fieldId: string;
+  answer: string;
+  charCount: number;
+  warnings: string[];
+};
+
+export type DraftFile = {
+  reportId: string;
+  applyUrl: string | null;
+  generatedAt: string;
+  drafts: DraftAnswer[];
+};
+
+export type DraftRequest = {
+  reportId: string;
+  fields: ScrapedField[];
+  applyUrl?: string;
+};
+
+export type DraftStartResponse = {
+  jobId: string;
+  kind: JobKind;
+  startedAt: string;
+};
+
+// Custom SSE event types layered on top of /sse/jobs/:jobId. The transport
+// continues to emit `line` events; the frontend can either parse `DRAFT:` /
+// `DRAFT_ANSWERS_DONE:` / `DRAFT_ANSWERS_FAILED:` markers itself, or use the
+// helpers in app/web/src/lib that produce these typed events.
+export type DraftEvent =
+  | { type: "draft"; draft: DraftAnswer }
+  | { type: "draft:done"; count: number }
+  | { type: "draft:failed"; reason: string };

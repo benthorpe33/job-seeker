@@ -130,6 +130,22 @@ const SPECS: Record<JobKind, KindSpec> = {
     }),
     validate: rejectShellMetachars,
   },
+  "draft-answers": {
+    needsBash: true,
+    build: (userArgs) => ({
+      cmd: "bash",
+      args: ["batch/run-draft-answers.sh", ...userArgs],
+    }),
+    validate: (userArgs) => {
+      const err = rejectShellMetachars(userArgs);
+      if (err) return err;
+      // run-draft-answers.sh requires <report-num> <slug> <date> <fields-file>
+      if (userArgs.length < 4) {
+        return "draft-answers kind requires 4 args: <report-num> <slug> <date> <fields-file>";
+      }
+      return null;
+    },
+  },
 };
 
 export function isJobKind(s: string): s is JobKind {
