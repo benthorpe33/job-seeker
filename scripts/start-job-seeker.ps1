@@ -29,9 +29,42 @@ function Stop-PortHolder([int]$Port) {
   }
 }
 
-# 1. Kill anything already on the dev ports so we always start clean.
+function Stop-DevStackByCmdline() {
+  # Catch zombies from prior runs that never bound a port (concurrently
+  # restart loops, tsx-watch reload failures). The cmdline patterns are tight
+  # enough to only match our own processes — they won't kill Claude Code.
+  $pids = @()
+  $pids += (Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match "concurrently|tsx.*main\.ts|@job-seeker|vite.*5173" }).ProcessId
+  $pids += (Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match "npm run dev|dev:server|dev:web|dev-stdout\.log" }).ProcessId
+  foreach ($p in ($pids | Sort-Object -Unique)) {
+    try { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } catch {}
+  }
+}
+
+# Ensure a real bash is on PATH ahead of System32\bash.exe (the WSL launcher,
+# which fails with `execvpe(/bin/bash) failed: No such file or directory` when
+# no WSL distro is installed). Stage 6 (batch) and the draft-answers /
+# generate-cv / full-report / profile-diff stages all shell out to bash
+# scripts via job_seeker's `detectBash()`.
+$gitBashCandidates = @(
+  "C:\Program Files\Git\usr\bin",
+  "C:\Program Files\Git\bin",
+  "C:\Program Files (x86)\Git\usr\bin",
+  "C:\Program Files (x86)\Git\bin"
+)
+foreach ($d in $gitBashCandidates) {
+  if (Test-Path (Join-Path $d "bash.exe")) {
+    $env:PATH = "$d;$env:PATH"
+    break
+  }
+}
+
+# 1. Kill anything already on the dev ports + any zombies from prior runs.
 Stop-PortHolder 5173
 Stop-PortHolder 5174
+Stop-DevStackByCmdline
 Start-Sleep -Milliseconds 500
 
 # 2. Spawn `npm run dev` in a hidden cmd window, redirecting stdio to logs.
