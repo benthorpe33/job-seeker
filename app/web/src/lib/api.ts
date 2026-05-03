@@ -4,14 +4,20 @@ import type {
   ApplicationsListQuery,
   ApplicationsListResponse,
   CancelAllResponse,
+  DraftAnswer,
+  DraftFile,
+  DraftStartResponse,
   JobListResponse,
   JobLogResponse,
   JobsFilterStatus,
   JobStartResponse,
+  PasteResponse,
   PipelineRecord,
   PipelineStartRequest,
   PipelineStartResponse,
   ReportDetail,
+  ScrapedField,
+  ScrapeResponse,
 } from "@job-seeker/shared";
 
 async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
@@ -149,4 +155,73 @@ export async function getLinkedinPipeline(pipelineId: string): Promise<PipelineR
   return jsonFetch<PipelineRecord>(
     `/api/jobs/linkedin/${encodeURIComponent(pipelineId)}`,
   );
+}
+
+export async function scanForm(applyUrl: string): Promise<ScrapeResponse> {
+  return jsonFetch<ScrapeResponse>(`/api/scraper/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ applyUrl }),
+  });
+}
+
+export async function pasteForm(input: {
+  html?: string;
+  plainText?: string;
+}): Promise<PasteResponse> {
+  return jsonFetch<PasteResponse>(`/api/scraper/paste`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getDrafts(reportId: string): Promise<DraftFile | null> {
+  const res = await fetch(`/api/scraper/drafts/${encodeURIComponent(reportId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    let body: unknown = undefined;
+    try {
+      body = await res.json();
+    } catch {
+      /* ignore */
+    }
+    const msg =
+      body && typeof body === "object" && "error" in body
+        ? String((body as { error: string }).error)
+        : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return (await res.json()) as DraftFile;
+}
+
+export async function patchDrafts(
+  reportId: string,
+  drafts: DraftAnswer[],
+): Promise<DraftFile> {
+  return jsonFetch<DraftFile>(
+    `/api/scraper/drafts/${encodeURIComponent(reportId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drafts }),
+    },
+  );
+}
+
+export async function startDraftJob(args: {
+  reportId: string;
+  fields: ScrapedField[];
+  applyUrl?: string | null;
+}): Promise<DraftStartResponse> {
+  const body: Record<string, unknown> = {
+    reportId: args.reportId,
+    fields: args.fields,
+  };
+  if (args.applyUrl) body.applyUrl = args.applyUrl;
+  return jsonFetch<DraftStartResponse>(`/api/scraper/draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

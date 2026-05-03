@@ -7,6 +7,7 @@ import App from "./App";
 import { Tracker } from "./routes/Tracker";
 import { Report } from "./routes/Report";
 import { Jobs } from "./routes/Jobs";
+import { ApplyDrafts } from "./routes/ApplyDrafts";
 import "highlight.js/styles/github-dark.css";
 import "./index.css";
 
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Tracker /> },
       { path: "reports/:id", element: <Report /> },
+      { path: "apply-drafts/:reportId", element: <ApplyDrafts /> },
       { path: "jobs", element: <Jobs /> },
     ],
   },

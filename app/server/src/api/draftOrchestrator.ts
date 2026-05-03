@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 
 import type {
+  DraftAnswer,
   DraftFile,
   DraftRequest,
   DraftStartResponse,
@@ -18,7 +19,9 @@ import {
   draftsPathFor,
   fieldsPathFor,
   readDraftsFile,
+  redactPhoneFromAnswer,
   registerDraftReconcileHook,
+  writeDraftsFile,
 } from "../scraper/draftReconcile.js";
 import { isPiiLabel } from "../scraper/pii.js";
 
@@ -227,6 +230,63 @@ export const draftOrchestratorPlugin: FastifyPluginAsync = async (
       return reply.code(404).send({ error: `no drafts found for report ${reportId}` });
     }
     return reply.code(200).send(file);
+  });
+
+  app.patch<{
+    Params: { reportId: string };
+    Body: { drafts?: unknown };
+    Reply: DraftFile | { error: string };
+  }>("/api/scraper/drafts/:reportId", async (request, reply) => {
+    const reportId = (request.params.reportId ?? "").trim();
+    if (!reportId) {
+      return reply.code(400).send({ error: "reportId is required" });
+    }
+    if (!REPORT_ID_REGEX.test(reportId)) {
+      return reply.code(400).send({ error: "reportId contains invalid characters" });
+    }
+
+    const body = request.body ?? {};
+    if (!Array.isArray(body.drafts)) {
+      return reply.code(400).send({ error: "body.drafts must be an array" });
+    }
+    if (body.drafts.length > MAX_FIELDS) {
+      return reply.code(400).send({ error: `drafts exceeds maximum of ${MAX_FIELDS}` });
+    }
+
+    const path = draftsPathFor(REPO_ROOT, reportId);
+    const existing = readDraftsFile(path);
+    if (!existing) {
+      return reply.code(404).send({ error: `no drafts found for report ${reportId}` });
+    }
+
+    const next: DraftAnswer[] = [];
+    for (const raw of body.drafts) {
+      if (!raw || typeof raw !== "object") {
+        return reply.code(400).send({ error: "each draft must be an object" });
+      }
+      const d = raw as Record<string, unknown>;
+      const fieldId = typeof d.fieldId === "string" ? d.fieldId : "";
+      const answer = typeof d.answer === "string" ? d.answer : null;
+      if (!fieldId || answer === null) {
+        return reply.code(400).send({ error: "each draft requires fieldId and answer" });
+      }
+      const charCount =
+        typeof d.charCount === "number" && Number.isFinite(d.charCount)
+          ? Math.trunc(d.charCount)
+          : answer.length;
+      const warnings = Array.isArray(d.warnings)
+        ? (d.warnings as unknown[]).filter((w): w is string => typeof w === "string")
+        : [];
+      next.push(redactPhoneFromAnswer({ fieldId, answer, charCount, warnings }));
+    }
+
+    try {
+      const file = writeDraftsFile(path, reportId, existing.applyUrl, next);
+      return reply.code(200).send(file);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.code(500).send({ error: `failed to persist drafts: ${message}` });
+    }
   });
 };
 

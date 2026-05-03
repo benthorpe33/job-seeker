@@ -25,20 +25,6 @@ const BLOCK_LABELS: Record<string, string> = {
   G: "Posting Legitimacy",
 };
 
-function DisabledButton({ label, hint }: { label: string; hint: string }) {
-  return (
-    <button
-      type="button"
-      disabled
-      title={hint}
-      className="cursor-not-allowed rounded border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-left text-xs text-slate-500"
-    >
-      {label}
-      <span className="ml-1 text-slate-600">· {hint}</span>
-    </button>
-  );
-}
-
 function PromoteToFullButton({
   running,
   onClick,
@@ -376,7 +362,13 @@ export function Report() {
                 onClick={() => void handlePromoteToFull()}
               />
             )}
-            <DisabledButton label="Draft answers" hint="Coming in T9" />
+            <Link
+              to={`/apply-drafts/${encodeURIComponent(id)}`}
+              className="rounded border border-violet-500/40 bg-violet-500/15 px-3 py-1.5 text-left text-xs text-violet-200 hover:bg-violet-500/25"
+            >
+              Draft answers
+              <span className="ml-1 text-violet-300/70">· scrape + draft</span>
+            </Link>
           </div>
         </section>
       </aside>

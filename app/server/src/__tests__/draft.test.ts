@@ -628,6 +628,115 @@ test("GET /api/scraper/drafts/:reportId 200 returns the persisted DraftFile afte
   }
 });
 
+test("PATCH /api/scraper/drafts/:reportId 200 updates persisted drafts (T9d edits)", async () => {
+  // Acceptance criterion (8) of T9d: edits made in the UI persist across reload.
+  // The PATCH endpoint rewrites the drafts.json with the user's edited answers
+  // while preserving the applyUrl from the existing file.
+  const { app, cleanup } = await buildAppWithDb();
+  const { REPO_ROOT } = await import("../env.js");
+  const reportId = `__test_patch_${process.pid}_${Date.now()}`;
+  const path = draftsPathFor(REPO_ROOT, reportId);
+  try {
+    writeDraftsFile(path, reportId, "https://example.com/apply", [
+      { fieldId: "q1", answer: "original alpha", charCount: 14, warnings: [] },
+      { fieldId: "q2", answer: "original beta", charCount: 13, warnings: [] },
+    ]);
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/scraper/drafts/${reportId}`,
+      payload: {
+        drafts: [
+          { fieldId: "q1", answer: "edited alpha", charCount: 12, warnings: [] },
+          { fieldId: "q2", answer: "edited beta", charCount: 11, warnings: [] },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as DraftFile;
+    assert.equal(body.reportId, reportId);
+    assert.equal(body.applyUrl, "https://example.com/apply");
+    assert.equal(body.drafts[0]?.answer, "edited alpha");
+    assert.equal(body.drafts[1]?.answer, "edited beta");
+
+    // And reading it back via GET returns the edited content (full reload).
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/api/scraper/drafts/${reportId}`,
+    });
+    assert.equal(getRes.statusCode, 200);
+    const file = getRes.json() as DraftFile;
+    assert.equal(file.drafts[0]?.answer, "edited alpha");
+  } finally {
+    rmSync(join(REPO_ROOT, "data", "applications", reportId), {
+      recursive: true,
+      force: true,
+    });
+    await cleanup();
+  }
+});
+
+test("PATCH /api/scraper/drafts/:reportId redacts phone numbers from edited answers", async () => {
+  // Defense-in-depth: even if the user (or some pasted content) puts a phone
+  // number into an edited answer, the PATCH endpoint redacts it before
+  // writing to disk. Mirrors the behavior of the post-job reconcile hook.
+  const { app, cleanup } = await buildAppWithDb();
+  const { REPO_ROOT } = await import("../env.js");
+  const reportId = `__test_patch_phone_${process.pid}_${Date.now()}`;
+  const path = draftsPathFor(REPO_ROOT, reportId);
+  try {
+    writeDraftsFile(path, reportId, null, [
+      { fieldId: "q1", answer: "ok", charCount: 2, warnings: [] },
+    ]);
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/scraper/drafts/${reportId}`,
+      payload: {
+        drafts: [
+          { fieldId: "q1", answer: "Reach me at 786-300-9961.", charCount: 25, warnings: [] },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as DraftFile;
+    assert.doesNotMatch(body.drafts[0]?.answer ?? "", /\d{3}-\d{3}-\d{4}/);
+    assert.ok(body.drafts[0]?.warnings.includes("phone-number-detected; redacted"));
+  } finally {
+    rmSync(join(REPO_ROOT, "data", "applications", reportId), {
+      recursive: true,
+      force: true,
+    });
+    await cleanup();
+  }
+});
+
+test("PATCH /api/scraper/drafts/:reportId 404 when no existing drafts file", async () => {
+  const { app, cleanup } = await buildAppWithDb();
+  try {
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/scraper/drafts/__missing_report__",
+      payload: { drafts: [{ fieldId: "q1", answer: "hi" }] },
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("PATCH /api/scraper/drafts/:reportId 400 when body.drafts is not an array", async () => {
+  const { app, cleanup } = await buildAppWithDb();
+  try {
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/scraper/drafts/whatever",
+      payload: { drafts: "nope" },
+    });
+    assert.equal(res.statusCode, 400);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("GET /api/scraper/drafts/:reportId 400 on path traversal attempts", async () => {
   const { app, cleanup } = await buildAppWithDb();
   try {
