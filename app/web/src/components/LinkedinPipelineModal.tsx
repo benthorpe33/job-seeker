@@ -168,8 +168,8 @@ export function LinkedinPipelineModal({ open, onClose }: Props) {
   const isRunning = pipeline?.status === "running";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 py-12">
-      <div className="flex w-full max-w-3xl flex-col gap-4 rounded-lg border border-slate-800 bg-slate-950 p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-12">
+      <div className="flex max-h-[calc(100vh-6rem)] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-5 shadow-2xl">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-100">
