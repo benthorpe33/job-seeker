@@ -14,6 +14,7 @@
     "@job-seeker/shared": "*",
     "better-sqlite3": "^11.5.0",
     "chokidar": "^4.0.1",
+    "diff": "^7.0.0",
     "fastify": "^5.0.0",
     "node-html-parser": "^7.1.0",
     "pino-pretty": "^11.2.2",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
+    "@types/diff": "^7.0.0",
     "@types/node": "^22.7.5",
     "tsx": "^4.19.1"
   }

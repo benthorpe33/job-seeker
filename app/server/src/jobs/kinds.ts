@@ -146,6 +146,21 @@ const SPECS: Record<JobKind, KindSpec> = {
       return null;
     },
   },
+  "profile-diff-draft": {
+    needsBash: true,
+    build: (userArgs) => ({
+      cmd: "bash",
+      args: ["batch/run-profile-diff.sh", ...userArgs],
+    }),
+    validate: (userArgs) => {
+      const err = rejectShellMetachars(userArgs);
+      if (err) return err;
+      if (userArgs.length < 1) {
+        return "profile-diff-draft kind requires 1 arg: <patterns-file>";
+      }
+      return null;
+    },
+  },
 };
 
 export function isJobKind(s: string): s is JobKind {

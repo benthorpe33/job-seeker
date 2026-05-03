@@ -6,6 +6,8 @@ import { cvOrchestratorPlugin } from "./cvOrchestrator.js";
 import { draftOrchestratorPlugin } from "./draftOrchestrator.js";
 import { fullReportOrchestratorPlugin } from "./fullReportOrchestrator.js";
 import { linkedinPipelinePlugin } from "./linkedinPipelineRoutes.js";
+import { profileDiffPlugin } from "./applyProfileDiff.js";
+import { rejectionPatternsPlugin } from "./rejectionsPatterns.js";
 import { reportsPlugin } from "./reports.js";
 import { indexSsePlugin } from "./sse.js";
 
@@ -30,6 +32,8 @@ export const apiPlugin = (opts: ApiPluginOpts): FastifyPluginAsync => {
     await app.register(fullReportOrchestratorPlugin);
     await app.register(draftOrchestratorPlugin);
     await app.register(linkedinPipelinePlugin);
+    await app.register(rejectionPatternsPlugin);
+    await app.register(profileDiffPlugin);
     await app.register(indexSsePlugin);
   };
 };

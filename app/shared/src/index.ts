@@ -49,7 +49,8 @@ export type JobKind =
   | "generate-cv"
   | "full-report"
   | "liveness"
-  | "draft-answers";
+  | "draft-answers"
+  | "profile-diff-draft";
 
 export type JobLogLine = {
   ts: string;
@@ -278,3 +279,62 @@ export type DraftEvent =
   | { type: "draft"; draft: DraftAnswer }
   | { type: "draft:done"; count: number }
   | { type: "draft:failed"; reason: string };
+
+// --- Rejection patterns + profile-diff drafter (T10 / js-70e) -------------
+
+export type RejectionScoreBand = "3.5-3.9" | "4.0-4.4" | ">=4.5" | "unscored";
+
+export type RejectionReasonCategory =
+  | "seniority"
+  | "comp"
+  | "location"
+  | "domain-fit"
+  | "skills"
+  | "culture"
+  | "other";
+
+export type RejectionPatternKeyword = { keyword: string; count: number };
+
+export type RejectionPatternCompany = { company: string; count: number };
+
+export type RejectionPatternCategory = {
+  reasonCategory: RejectionReasonCategory;
+  companies: RejectionPatternCompany[];
+};
+
+export type RejectionRecentReason = {
+  ts: string;
+  company: string;
+  role: string;
+  score: number | null;
+  reason: string;
+};
+
+export type RejectionPatterns = {
+  totalRejections: number;
+  topReasonKeywords: RejectionPatternKeyword[];
+  topCompaniesByReason: RejectionPatternCategory[];
+  scoreBands: { band: RejectionScoreBand; count: number }[];
+  recentReasons: RejectionRecentReason[];
+  generatedAt: string;
+};
+
+export type ProfileDiffDraftStartResponse = {
+  jobId: string;
+  kind: JobKind;
+  startedAt: string;
+};
+
+export type ProfileDiffResult = {
+  diff: string;
+  rationale: string;
+  sections: string[];
+};
+
+export type ApplyProfileDiffRequest = { diff: string };
+
+export type ApplyProfileDiffResponse = {
+  ok: true;
+  bytesWritten: number;
+  sharedMtimeUnchanged: true;
+};

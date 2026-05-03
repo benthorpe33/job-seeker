@@ -3,6 +3,7 @@ import type {
   ApplicationRow,
   ApplicationsListQuery,
   ApplicationsListResponse,
+  ApplyProfileDiffResponse,
   CancelAllResponse,
   DraftAnswer,
   DraftFile,
@@ -15,6 +16,8 @@ import type {
   PipelineRecord,
   PipelineStartRequest,
   PipelineStartResponse,
+  ProfileDiffDraftStartResponse,
+  RejectionPatterns,
   ReportDetail,
   ScrapedField,
   ScrapeResponse,
@@ -223,5 +226,25 @@ export async function startDraftJob(args: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+export async function getRejectionPatterns(): Promise<RejectionPatterns> {
+  return jsonFetch<RejectionPatterns>(`/api/rejections/patterns`);
+}
+
+export async function startProfileDiffJob(): Promise<ProfileDiffDraftStartResponse> {
+  return jsonFetch<ProfileDiffDraftStartResponse>(`/api/rejections/draft-profile-diff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function applyProfileDiff(diff: string): Promise<ApplyProfileDiffResponse> {
+  return jsonFetch<ApplyProfileDiffResponse>(`/api/rejections/apply-diff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ diff }),
   });
 }
