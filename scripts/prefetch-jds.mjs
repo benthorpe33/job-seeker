@@ -21,7 +21,7 @@ for (const line of INPUT.slice(1)) {
 const failedIds = [];
 for (const line of STATE.slice(1)) {
   const cols = line.split('\t');
-  if (cols[0] && cols[2] === 'failed' && +cols[0] <= 42) failedIds.push(cols[0]);
+  if (cols[0] && cols[2] === 'failed') failedIds.push(cols[0]);
 }
 console.log(`Failed ids: ${failedIds.join(', ')}`);
 

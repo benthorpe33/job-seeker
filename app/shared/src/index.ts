@@ -42,6 +42,7 @@ export type JobKind =
   | "resolve-ats-urls"
   | "append-to-pipeline"
   | "linkedin-build-input"
+  | "filter-batch-input"
   | "prefetch-jds"
   | "merge-tracker"
   | "verify-pipeline"

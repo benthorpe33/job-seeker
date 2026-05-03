@@ -66,6 +66,14 @@ const SPECS: Record<JobKind, KindSpec> = {
     }),
     validate: rejectShellMetachars,
   },
+  "filter-batch-input": {
+    needsBash: false,
+    build: (userArgs) => ({
+      cmd: "node",
+      args: ["scripts/filter-batch-input.mjs", ...userArgs],
+    }),
+    validate: rejectShellMetachars,
+  },
   "prefetch-jds": {
     needsBash: false,
     build: (userArgs) => ({

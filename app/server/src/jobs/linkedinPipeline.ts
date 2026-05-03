@@ -61,24 +61,30 @@ export const STAGE_DEFS_BASE: ReadonlyArray<StageDef> = [
   },
   {
     stageNum: 5,
+    name: "Filter already-tracked + non-target-location URLs",
+    kind: "filter-batch-input",
+    args: [],
+  },
+  {
+    stageNum: 6,
     name: "Pre-fetch JDs (Greenhouse/Ashby)",
     kind: "prefetch-jds",
     args: [],
   },
   {
-    stageNum: 6,
+    stageNum: 7,
     name: "Run batch evaluations",
     kind: "batch",
     args: ["--parallel", "2"],
   },
   {
-    stageNum: 7,
+    stageNum: 8,
     name: "Merge tracker additions",
     kind: "merge-tracker",
     args: [],
   },
   {
-    stageNum: 8,
+    stageNum: 9,
     name: "Verify pipeline integrity",
     kind: "verify-pipeline",
     args: [],
@@ -159,7 +165,7 @@ export class LinkedinPipeline {
   }
 
   /**
-   * Run from `fromStage` (inclusive) through stage 8. Earlier stages are
+   * Run from `fromStage` (inclusive) through stage 9. Earlier stages are
    * preserved as-is; later stages reset to pending unless they're already
    * skipped (prefetchJds=false sticks).
    */
