@@ -21,6 +21,7 @@ data/linkedin-saved-html/
 data/linkedin-pipeline-preview.md
 data/outcomes.tsv
 data/outcomes-README.md
+data/rejection-feedback.tsv
 data/cover-letters/
 reports/*.md
 !reports/.gitkeep
