@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ScrapeResult } from "@job-seeker/shared";
 
@@ -20,6 +20,12 @@ export function ScrapePanel({ applyUrl, onResult }: Props) {
   const [pasteText, setPasteText] = useState("");
   const [busy, setBusy] = useState(false);
   const [urlInput, setUrlInput] = useState(applyUrl ?? "");
+
+  // Hydrate the input when the parent's applyUrl prop arrives later (the
+  // report query resolves after this component first mounts).
+  useEffect(() => {
+    if (applyUrl && !urlInput) setUrlInput(applyUrl);
+  }, [applyUrl, urlInput]);
 
   async function handleAutoScrape() {
     const trimmed = urlInput.trim();
