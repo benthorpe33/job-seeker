@@ -435,7 +435,20 @@ process_offer() {
   local date
   date=$(date +%Y-%m-%d)
   local jd_file="/tmp/batch-jd-${id}.txt"
-  local phase1_file="/tmp/batch-phase1-${id}.md"
+  # js-f5d: phase-1 fragment uses a unique-per-invocation path instead of
+  # /tmp/batch-phase1-${id}.md so that a previous batch run's content for the
+  # same id (stage-5 renumbering reuses ids across pipeline runs) cannot leak
+  # into this run's full pass. Cleanup paths below remove the file.
+  # PID + RANDOM avoids collisions between parallel workers; .md suffix is
+  # preserved so the worker's prompt-parsing regexes still match the path.
+  # Use hyphens (not dots) inside the unique stem so the only `.` in the path
+  # is the .md extension — keeps prompt-parser regexes like `([^.]+\.md)`
+  # matching the full path.
+  local phase1_file="/tmp/batch-phase1-${id}-${BASHPID:-$$}-${RANDOM}.md"
+  rm -f "$phase1_file" 2>/dev/null || true
+  # Start empty so the `! -s` check after triage detects worker hallucination
+  # (worker claims "wrote phase-1 fragment" but never invoked Write).
+  : > "$phase1_file"
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
@@ -473,8 +486,9 @@ process_offer() {
     } >> "$facts_pack_file"
   fi
 
-  # Stale phase-1 fragment from a prior attempt would mislead the full pass.
-  rm -f "$phase1_file"
+  # phase1_file is mktemp'd above (js-f5d) — already unique per invocation, no
+  # stale-content risk. The empty-file truncate above stays so the `! -s` check
+  # after triage flags worker hallucination.
 
   # User-prompt skeleton — same shape for both passes; the worker's role is
   # set by the system prompt (triage vs full).
@@ -572,15 +586,48 @@ process_offer() {
     return
   fi
 
-  # Triage said keep — phase-1 fragment must exist for the full pass to splice in.
-  if [[ ! -f "$phase1_file" ]]; then
+  # Triage said keep — phase-1 fragment must exist AND be non-empty for the
+  # full pass to splice in. js-f5d: -s instead of -f catches the case where the
+  # mktemp'd file exists but the worker hallucinated writing (common pattern:
+  # worker emits "Phase-1 fragment written to {path}" prose without invoking
+  # the Write tool).
+  if [[ ! -s "$phase1_file" ]]; then
     local completed_at
     completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     retries=$((retries + 1))
-    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: phase-1 fragment missing" "$retries"
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: phase-1 fragment missing or empty" "$retries"
     echo "    ❌ Triage produced no phase-1 fragment at $phase1_file"
-    rm -f "$facts_pack_file"
+    rm -f "$facts_pack_file" "$phase1_file"
     return
+  fi
+
+  # js-f5d: defensive content check — confirm the phase-1 fragment's
+  # PHASE1_META company_slug matches the URL's ATS slug (Ashby/Greenhouse).
+  # Catches worker confusion where the JD path led to a different company than
+  # the URL. Best-effort only — skip the check for URLs whose slug we don't
+  # recognize so we don't false-fail Lever/Workday/etc.
+  local url_slug=""
+  if [[ "$url" =~ jobs\.ashbyhq\.com/([^/?#]+)/ ]]; then
+    url_slug="${BASH_REMATCH[1],,}"
+  elif [[ "$url" =~ (job-boards|boards)\.greenhouse\.io/([^/?#]+)/jobs/ ]]; then
+    url_slug="${BASH_REMATCH[2],,}"
+  fi
+  if [[ -n "$url_slug" ]]; then
+    local phase1_meta
+    phase1_meta=$(head -1 "$phase1_file")
+    local phase1_slug
+    phase1_slug=$(printf '%s' "$phase1_meta" | sed -nE 's/.*"company_slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | tr '[:upper:]' '[:lower:]')
+    # Loose compare: tolerate "ramp" vs "ramp-com" by checking either contains the other.
+    # Empty phase1_slug → skip (don't break on prompt-shape changes).
+    if [[ -n "$phase1_slug" && "$phase1_slug" != *"$url_slug"* && "$url_slug" != *"$phase1_slug"* ]]; then
+      local completed_at
+      completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      retries=$((retries + 1))
+      update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: phase-1 slug '$phase1_slug' does not match URL slug '$url_slug'" "$retries"
+      echo "    ❌ Phase-1 slug mismatch (phase1: $phase1_slug, url: $url_slug) — likely cross-company contamination"
+      rm -f "$facts_pack_file" "$phase1_file"
+      return
+    fi
   fi
 
   # ============================================================
