@@ -84,3 +84,15 @@ A PID-based lock file (`batch-runner.pid`) prevents concurrent batch runs. If a 
 `batch-runner.sh` reads pre-fetched JDs from `/tmp/batch-jd-{id}.txt`. On Git Bash for Windows, `/tmp` maps to `%LOCALAPPDATA%\Temp` — not to `C:\tmp`. Any Node script that writes JDs for the worker to consume must use `os.tmpdir()` (which also returns `%LOCALAPPDATA%\Temp` on Windows) rather than a literal `/tmp/...` string. A hardcoded `/tmp/...` in Node resolves to `C:\tmp\...` on Windows, so the worker silently falls back to WebFetch and often produces a degraded report (title/company only).
 
 `scripts/prefetch-jds.mjs` uses `os.tmpdir()` — keep it that way. `test-all.mjs` includes a smoke test (`4b. Prefetch tmpdir invariant`) that asserts Node's tmpdir and bash's `/tmp` point at the same directory.
+
+## Triage model choice — Write-tool reliability tradeoff (js-ivp)
+
+The triage worker (`batch-prompt-triage.md`) MUST invoke the Write tool to persist `{{PHASE1_FILE}}`. Some smaller models (notably Haiku 4.5) have a tendency to "inline" the fragment in their response prose and emit a `status=completed` JSON without ever calling Write — the orchestrator then catches the empty file at `batch-runner.sh:594` and marks the offer failed, burning a retry. Observed ~30% silent-skip rate on FDE/Ops-archetype roles 2026-05-04.
+
+Mitigations layered in:
+
+1. **Step 3.5 self-verify** in `batch-prompt-triage.md` — the worker is told to Read `{{PHASE1_FILE}}` after Step 3 and re-Write if the file is missing/empty before emitting the Step 5 JSON. Cheap, model-agnostic.
+2. **Orchestrator guard** at `batch-runner.sh:594` (`-s` test) — last line of defense; failed offer is retried.
+3. **Model swap** — when changing `--triage-model`, run a 10-offer sample first and check `batch/logs/*.triage.log` for "Phase 1 fragment written" prose without a corresponding non-empty `{{PHASE1_FILE}}`. If the failure rate is >10%, default that model to the full pass instead of triage, or upgrade to Sonnet for triage and accept the ~5x cost.
+
+Sonnet 4.6 has not exhibited this failure mode in our batches; Haiku 4.5 has. Treat any new triage model as untrusted until verified.

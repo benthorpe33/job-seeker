@@ -74,6 +74,14 @@ Write the phase-1 fragment to `{{PHASE1_FILE}}` with these exact sections, in th
 
 `company_slug` = lowercase + hyphens. Numeric fields in the meta JSON are bare numbers (no `/5`). `score` is the **Global** value (e.g., `4.2`).
 
+## Step 3.5 — Self-verify the fragment was actually written (MANDATORY, js-ivp)
+
+Before continuing to Step 4, you MUST invoke the **Read** tool on `{{PHASE1_FILE}}` and confirm:
+1. The file exists and is non-empty.
+2. Line 1 starts with `<!-- PHASE1_META: {` and contains the `"score"` and `"company_slug"` fields.
+
+If either check fails, you have not actually written the fragment — narration like "Phase 1 fragment written to {path}" does NOT count. Invoke **Write** now with the full fragment content and re-Read to confirm. Do NOT emit the Step 5 JSON until the Read succeeds. Skipping this self-check is the most common silent failure mode for the triage worker; the orchestrator will mark the offer failed and burn a retry, so the cost of skipping is higher than the cost of one extra Read.
+
 ## Step 4 — Decision: stub or hand off
 
 Compare **Global** score to `{{TRIAGE_THRESHOLD}}`:
@@ -124,4 +132,4 @@ On failure: same shape with `"status":"failed"`, `"score":null`, `"stub":null`, 
 
 **NEVER:** WebSearch (this is the triage pass — comp evidence belongs in Phase 2) · fabricate experience/metrics · write to cv.md/i18n.ts · include a phone in drafted outbound text · use corporate-speak ("passionate about", "leveraged", "cutting-edge") · skip writing `{{PHASE1_FILE}}` even when emitting a stub.
 
-**ALWAYS:** use the Facts Pack (do NOT Read cv.md or article-digest.md) · detect archetype + adapt framing · cite exact CV line text in Block B · write in the JD's language (English default) · emit the JSON line as the LAST line of stdout · short sentences, action verbs, no passive padding.
+**ALWAYS:** use the Facts Pack (do NOT Read cv.md or article-digest.md) · detect archetype + adapt framing · cite exact CV line text in Block B · write in the JD's language (English default) · emit the JSON line as the LAST line of stdout · short sentences, action verbs, no passive padding · **invoke Read on `{{PHASE1_FILE}}` after Step 3 to confirm the Write actually fired (Step 3.5)**.
