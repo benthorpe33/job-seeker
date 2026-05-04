@@ -124,6 +124,7 @@ test("GET /api/reports/:id returns blocks + body", async () => {
         header: { score: number | null; legitimacy: string | null };
         blocks: Record<string, string>;
         bodyMd: string;
+        applicationNum: number | null;
       };
       assert.equal(body.id, "001-anthropic-2026-04-29");
       assert.equal(body.header.score, 4.5);
@@ -132,6 +133,7 @@ test("GET /api/reports/:id returns blocks + body", async () => {
       assert.ok(body.blocks["B"]);
       assert.ok(body.blocks["G"]);
       assert.ok(body.bodyMd.includes("anthropic"));
+      assert.equal((body as unknown as { applicationNum: number | null }).applicationNum, 1);
     } finally {
       await close();
     }

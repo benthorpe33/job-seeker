@@ -33,6 +33,10 @@ export type ReportDetail = {
   blocks: Record<string, string>;
   bodyMd: string;
   filePath: string;
+  // Tracker application num for the row whose report_path points at this
+  // report. May differ from `num` (which is the report-file number) — e.g.
+  // application #111 can link to report #154. Null if no tracker row links here.
+  applicationNum: number | null;
 };
 
 export type JobKind =

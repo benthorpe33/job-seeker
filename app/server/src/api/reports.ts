@@ -20,7 +20,7 @@ type DbReportRow = {
   body_md: string;
 };
 
-function toDetail(row: DbReportRow): ReportDetail {
+function toDetail(row: DbReportRow, applicationNum: number | null): ReportDetail {
   let blocks: Record<string, string> = {};
   try {
     blocks = JSON.parse(row.blocks_json) as Record<string, string>;
@@ -42,7 +42,15 @@ function toDetail(row: DbReportRow): ReportDetail {
     blocks,
     bodyMd: row.body_md,
     filePath: join("reports", `${row.id}.md`),
+    applicationNum,
   };
+}
+
+function lookupApplicationNum(db: DB, reportId: string): number | null {
+  const row = db
+    .prepare(`SELECT num FROM applications WHERE report_path = ?`)
+    .get(`reports/${reportId}.md`) as { num: number | null } | undefined;
+  return row?.num ?? null;
 }
 
 export const reportsPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -62,7 +70,8 @@ export const reportsPlugin: FastifyPluginAsync = async (app: FastifyInstance) =>
         )
         .get(id) as DbReportRow | undefined;
       if (!row) return reply.code(404).send({ error: `report ${id} not found` });
-      return reply.send(toDetail(row));
+      const applicationNum = lookupApplicationNum(db(), id);
+      return reply.send(toDetail(row, applicationNum));
     },
   );
 

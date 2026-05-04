@@ -128,15 +128,19 @@ export function Report() {
   const cvJobRunning = cvJob?.status === "running";
   const fullReportJobRunning = fullReportJob?.status === "running";
 
-  const num = query.data?.num ?? null;
+  // Use the tracker application num (looked up by report_path on the server),
+  // not the report-file num — they can differ. E.g. application #111 may link
+  // to report #154, in which case patching /api/applications/154 would mutate
+  // a different application entirely.
+  const applicationNum = query.data?.applicationNum ?? null;
   const appQuery = useQuery<ApplicationRow>({
-    queryKey: ["application", num],
+    queryKey: ["application", applicationNum],
     queryFn: async () => {
-      const res = await fetch(`/api/applications/${num}`);
+      const res = await fetch(`/api/applications/${applicationNum}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as ApplicationRow;
     },
-    enabled: num !== null && num > 0,
+    enabled: applicationNum !== null && applicationNum > 0,
   });
 
   useSSE(
@@ -340,11 +344,17 @@ export function Report() {
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
             Status
           </h3>
-          <StatusMenu
-            applicationId={r.num}
-            currentStatus={appQuery.data?.status ?? ""}
-            size="sm"
-          />
+          {applicationNum !== null ? (
+            <StatusMenu
+              applicationId={applicationNum}
+              currentStatus={appQuery.data?.status ?? ""}
+              size="sm"
+            />
+          ) : (
+            <p className="text-xs text-slate-500">
+              No tracker row links to this report.
+            </p>
+          )}
         </section>
         <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
