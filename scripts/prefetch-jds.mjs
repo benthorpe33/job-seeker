@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// Pre-fetch JDs for failed batch ids → {tmpdir}/batch-jd-{id}.txt.
+// Pre-fetch JDs → {tmpdir}/batch-jd-{id}.txt.
+// Modes:
+//   - No flags: scan batch-state.tsv for status=='failed' rows (recovery).
+//   - --ids=a,b,c: prefetch the listed ids explicitly (preemptive, used by
+//     batch-runner.sh main() before triage workers spawn — js-0zl).
 // Strategy:
 //   - Ashby URLs: hit /posting-api/job-board/{slug} (public), filter by job id.
 //   - Greenhouse URLs: hit boards-api.greenhouse.io/v1/boards/{slug}/jobs/{id}.
@@ -17,7 +21,6 @@ import { join } from 'node:path';
 
 const TMP = tmpdir();
 
-const STATE = readFileSync('batch/batch-state.tsv', 'utf-8').split('\n');
 const INPUT = readFileSync('batch/batch-input.tsv', 'utf-8').split('\n');
 
 // Build id → url map
@@ -27,13 +30,23 @@ for (const line of INPUT.slice(1)) {
   if (id && url) urlById.set(id, url);
 }
 
-// Find currently-failed ids (from state)
-const failedIds = [];
-for (const line of STATE.slice(1)) {
-  const cols = line.split('\t');
-  if (cols[0] && cols[2] === 'failed') failedIds.push(cols[0]);
+// js-0zl: --ids=a,b,c selects an explicit id list (preemptive prefetch from
+// batch-runner.sh). Without the flag, fall back to the original behavior:
+// scan batch-state.tsv for status=='failed' rows (post-failure recovery).
+const idsArg = process.argv.find(a => a.startsWith('--ids='));
+let targetIds;
+if (idsArg) {
+  targetIds = idsArg.slice('--ids='.length).split(',').map(s => s.trim()).filter(Boolean);
+  console.log(`Target ids (--ids): ${targetIds.join(', ')}`);
+} else {
+  const STATE = readFileSync('batch/batch-state.tsv', 'utf-8').split('\n');
+  targetIds = [];
+  for (const line of STATE.slice(1)) {
+    const cols = line.split('\t');
+    if (cols[0] && cols[2] === 'failed') targetIds.push(cols[0]);
+  }
+  console.log(`Failed ids: ${targetIds.join(', ')}`);
 }
-console.log(`Failed ids: ${failedIds.join(', ')}`);
 
 function decodeUrl(u) { return decodeURIComponent(u); }
 
@@ -80,7 +93,7 @@ async function fetchGreenhouse(slug, jobId) {
 
 const results = { ok: [], skip: [], fail: [] };
 
-for (const id of failedIds) {
+for (const id of targetIds) {
   const url = urlById.get(id);
   if (!url) { results.skip.push(`${id} no-url`); continue; }
   try {

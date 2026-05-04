@@ -85,6 +85,10 @@ A PID-based lock file (`batch-runner.pid`) prevents concurrent batch runs. If a 
 
 `scripts/prefetch-jds.mjs` uses `os.tmpdir()` — keep it that way. `test-all.mjs` includes a smoke test (`4b. Prefetch tmpdir invariant`) that asserts Node's tmpdir and bash's `/tmp` point at the same directory.
 
+## Preemptive ATS prefetch (js-0zl)
+
+`batch-runner.sh main()` runs `scripts/prefetch-jds.mjs --ids=...` before any worker spawns. It scans `batch-input.tsv` for Ashby (`jobs.ashbyhq.com`) and Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `grnh.se`) URLs whose `/tmp/batch-jd-{id}.txt` is missing, then fetches them via the official ATS APIs. WebFetch alone returns header-only React shells for these ATSes, which would otherwise force the triage worker to self-fail with `JD retrieval failed`. Lever URLs are skipped — their API exposes full descriptions inline so WebFetch suffices. The new `--ids=a,b,c` flag is additive: running `node scripts/prefetch-jds.mjs` with no flags still scans `batch-state.tsv` for `status=='failed'` rows (the original recovery path).
+
 ## Triage model choice — Write-tool reliability tradeoff (js-ivp)
 
 The triage worker (`batch-prompt-triage.md`) MUST invoke the Write tool to persist `{{PHASE1_FILE}}`. Some smaller models (notably Haiku 4.5) have a tendency to "inline" the fragment in their response prose and emit a `status=completed` JSON without ever calling Write — the orchestrator then catches the empty file at `batch-runner.sh:594` and marks the offer failed, burning a retry. Observed ~30% silent-skip rate on FDE/Ops-archetype roles 2026-05-04.

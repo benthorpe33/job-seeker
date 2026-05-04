@@ -779,6 +779,30 @@ main() {
 
   init_state
 
+  # js-0zl: preemptively prefetch JDs for ATSes WebFetch can't read. Ashby's
+  # React shell and Greenhouse's job-boards subdomain return header-only
+  # content via WebFetch; without a populated /tmp/batch-jd-{id}.txt the
+  # triage worker self-fails on first encounter. prefetch-jds.mjs hits the
+  # official ATS APIs and writes via os.tmpdir() (which Git Bash's /tmp maps
+  # to — see js-6d4 and the test-all.mjs invariant probe).
+  if [[ "$DRY_RUN" == "false" ]]; then
+    local -a prefetch_ids=()
+    while IFS=$'\t' read -r p_id p_url _; do
+      [[ -z "$p_id" || "$p_id" == "id" ]] && continue
+      [[ "$p_id" =~ ^[0-9]+$ ]] || continue
+      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se ]]; then
+        [[ ! -f "/tmp/batch-jd-${p_id}.txt" ]] && prefetch_ids+=("$p_id")
+      fi
+    done < "$INPUT_FILE"
+    if (( ${#prefetch_ids[@]} > 0 )); then
+      local ids_csv
+      ids_csv=$(IFS=,; echo "${prefetch_ids[*]}")
+      echo "=== Prefetching JDs for ${#prefetch_ids[@]} ATS URLs ==="
+      node scripts/prefetch-jds.mjs --ids="$ids_csv" || \
+        echo "  (some prefetches failed — continuing; degraded URLs will fall back to WebFetch)"
+    fi
+  fi
+
   # Count input offers (skip header, ignore blank lines)
   local total_input
   total_input=$(tail -n +2 "$INPUT_FILE" | grep -c '[^[:space:]]' 2>/dev/null || true)
