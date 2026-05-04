@@ -257,6 +257,19 @@ get_retries() {
   echo "${retries:-0}"
 }
 
+# js-tt0: Get the last error message recorded for an offer in state. Used to
+# detect the "phase-1 fragment missing or empty" pattern so the next retry can
+# auto-upgrade the triage model away from Haiku (which silently skips the Write
+# tool ~30% of the time on certain archetypes — see js-ivp).
+get_last_error() {
+  local id="$1"
+  if [[ ! -f "$STATE_FILE" ]]; then
+    echo ""
+    return
+  fi
+  awk -F'\t' -v id="$id" '$1 == id { print $8 }' "$STATE_FILE"
+}
+
 # Calculate next report number.
 # Caller must hold STATE_LOCK_DIR while this runs.
 next_report_num_unlocked() {
@@ -527,12 +540,30 @@ process_offer() {
 
   local triage_user_prompt="$user_prompt_base Phase: triage. Phase-1 fragment path: $phase1_file."
 
+  # js-tt0: if the previous attempt failed with "phase-1 fragment missing or
+  # empty" and the configured triage model is Haiku-flavored, auto-upgrade this
+  # retry's triage pass to FULL_MODEL. Haiku 4.5 silently skips the Write tool
+  # on a non-trivial fraction of offers (see js-ivp); the Step 3.5 self-verify
+  # in the prompt sometimes catches it but not always (id=70 Decagon, 2026-05-04
+  # — worker even narrated "Fragment verified ✓" without invoking Read or
+  # Write). Scoping the upgrade to this specific error pattern avoids paying
+  # the Sonnet/Opus premium on unrelated retry causes (network errors, etc.).
+  local effective_triage_model="$TRIAGE_MODEL"
+  if (( retries > 0 )); then
+    local prev_error
+    prev_error=$(get_last_error "$id")
+    if [[ "$prev_error" == *"phase-1 fragment missing or empty"* && "$TRIAGE_MODEL" == *haiku* && -n "$FULL_MODEL" ]]; then
+      effective_triage_model="$FULL_MODEL"
+      echo "    ↑ Triage auto-upgraded $TRIAGE_MODEL → $FULL_MODEL (prior fragment-missing failure, js-tt0)"
+    fi
+  fi
+
   local triage_exit=0
   local -a triage_args=( -p --dangerously-skip-permissions --append-system-prompt-file "$resolved_triage" )
-  if [[ -n "$TRIAGE_MODEL" ]]; then
-    triage_args+=( --model "$TRIAGE_MODEL" )
+  if [[ -n "$effective_triage_model" ]]; then
+    triage_args+=( --model "$effective_triage_model" )
   fi
-  echo "    → triage pass (model: ${TRIAGE_MODEL:-default})"
+  echo "    → triage pass (model: ${effective_triage_model:-default})"
   claude "${triage_args[@]}" "$triage_user_prompt" > "$triage_log" 2>&1 || triage_exit=$?
   rm -f "$resolved_triage"
 

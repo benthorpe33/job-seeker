@@ -95,8 +95,9 @@ The triage worker (`batch-prompt-triage.md`) MUST invoke the Write tool to persi
 
 Mitigations layered in:
 
-1. **Step 3.5 self-verify** in `batch-prompt-triage.md` — the worker is told to Read `{{PHASE1_FILE}}` after Step 3 and re-Write if the file is missing/empty before emitting the Step 5 JSON. Cheap, model-agnostic.
-2. **Orchestrator guard** at `batch-runner.sh:594` (`-s` test) — last line of defense; failed offer is retried.
-3. **Model swap** — when changing `--triage-model`, run a 10-offer sample first and check `batch/logs/*.triage.log` for "Phase 1 fragment written" prose without a corresponding non-empty `{{PHASE1_FILE}}`. If the failure rate is >10%, default that model to the full pass instead of triage, or upgrade to Sonnet for triage and accept the ~5x cost.
+1. **Step 3.5 self-verify** in `batch-prompt-triage.md` — the worker is told to Read `{{PHASE1_FILE}}` after Step 3 and re-Write if the file is missing/empty before emitting the Step 5 JSON. Cheap, model-agnostic. Note: not airtight — Haiku has been observed narrating "Fragment verified ✓" without actually invoking Read or Write (js-tt0, id=70 Decagon, 2026-05-04).
+2. **Orchestrator guard** in `batch-runner.sh process_offer()` (`! -s "$phase1_file"` test) — last line of defense; failed offer is marked `failed` and retried up to `--max-retries`.
+3. **Auto-upgrade on retry (js-tt0)** — when an offer's previous attempt failed with `triage: phase-1 fragment missing or empty` AND `--triage-model` is Haiku-flavored, the retry's triage pass uses `--full-model` (Sonnet 4.6 by default) instead. Scoped to that specific error string so unrelated retry causes don't escalate cost. Layered on top of (1)+(2): if Haiku skipped Write once, we don't trust it to do better next time on the same offer.
+4. **Model swap** — when changing `--triage-model`, run a 10-offer sample first and check `batch/logs/*.triage.log` for "Phase 1 fragment written" prose without a corresponding non-empty `{{PHASE1_FILE}}`. If the failure rate is >10%, default that model to the full pass instead of triage, or upgrade to Sonnet for triage and accept the ~5x cost.
 
 Sonnet 4.6 has not exhibited this failure mode in our batches; Haiku 4.5 has. Treat any new triage model as untrusted until verified.
