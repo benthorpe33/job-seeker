@@ -470,6 +470,15 @@ process_offer() {
 
   # Build facts pack from cv.md + article-digest.md (shared across both passes)
   local facts_pack_file="$BATCH_DIR/.facts-pack-${id}.md"
+
+  # js-dnp: RETURN trap closes the cleanup gap on every explicit `return` path
+  # below — defense-in-depth against future edits that add a return without a
+  # paired `rm -f`. The 8 existing explicit `rm -f` lines stay as redundancy.
+  # Does NOT fire on `set -e` aborts or signal kills (verified empirically);
+  # those are handled by the startup sweep in main() which clears any
+  # prior-run leftovers.
+  trap 'rm -f "$facts_pack_file" "$phase1_file" 2>/dev/null || true' RETURN
+
   : > "$facts_pack_file"
   if [[ -f "$PROJECT_DIR/cv.md" ]]; then
     {
@@ -754,6 +763,12 @@ main() {
 
   if [[ "$DRY_RUN" == "false" ]]; then
     acquire_lock
+
+    # js-dnp: sweep .facts-pack-*.md leftovers from any prior worker that died
+    # before its RETURN trap could fire (SIGKILL, OS reboot, parent timeout,
+    # Ctrl+C reaching a parallel worker). Safe because acquire_lock above
+    # guarantees we are the only batch-runner on this directory right now.
+    rm -f "$BATCH_DIR"/.facts-pack-*.md 2>/dev/null || true
   fi
 
   init_state
