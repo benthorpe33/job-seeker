@@ -439,6 +439,22 @@ process_offer() {
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
+  # js-oe9: reject stale prefetched JDs from prior runs whose URL no longer
+  # matches batch-input.tsv at this id. Without this, a re-keyed id silently
+  # feeds the worker the old company's JD while {{URL}} substitutes the new
+  # URL — producing a report with mismatched company/URL.
+  if [[ -f "$jd_file" ]]; then
+    local jd_url_file="${jd_file%.txt}.url"
+    local prefetched_url=""
+    if [[ -f "$jd_url_file" ]]; then
+      prefetched_url=$(cat "$jd_url_file" 2>/dev/null || true)
+    fi
+    if [[ "$prefetched_url" != "$url" ]]; then
+      echo "    ↻ Discarding stale JD for #$id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $url)"
+      rm -f "$jd_file" "$jd_url_file"
+    fi
+  fi
+
   # Build facts pack from cv.md + article-digest.md (shared across both passes)
   local facts_pack_file="$BATCH_DIR/.facts-pack-${id}.md"
   : > "$facts_pack_file"

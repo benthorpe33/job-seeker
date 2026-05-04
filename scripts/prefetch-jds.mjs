@@ -94,6 +94,9 @@ for (const id of failedIds) {
     }
     const path = `/tmp/batch-jd-${id}.txt`;
     writeFileSync(path, text);
+    // Sidecar URL marker — batch-runner.sh checks this to detect stale JDs
+    // when batch-input.tsv changes the URL for an existing id (js-oe9).
+    writeFileSync(`/tmp/batch-jd-${id}.url`, url);
     results.ok.push(`${id} → ${path} (${text.length} chars)`);
   } catch (e) {
     results.fail.push(`${id}: ${e.message}`);
