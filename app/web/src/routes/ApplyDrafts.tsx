@@ -19,7 +19,6 @@ import {
 import { ensureJobSubscription } from "../lib/jobSubscriptions";
 import { useJobStore } from "../lib/store";
 import { DraftsList } from "../components/applyDrafts/DraftsList";
-import { FieldsList } from "../components/applyDrafts/FieldsList";
 import { SafetyBanner } from "../components/applyDrafts/SafetyBanner";
 import { ScrapePanel } from "../components/applyDrafts/ScrapePanel";
 
@@ -153,13 +152,10 @@ export function ApplyDrafts() {
   const [fields, setFields] = useState<ScrapedField[]>([]);
   const [draftsByField, setDraftsByField] = useState<Record<string, DraftAnswer>>({});
   const [applyUrl, setApplyUrl] = useState<string | null>(null);
-  const [streamingJobId, setStreamingJobId] = useState<string | null>(null);
   const [streamingFieldId, setStreamingFieldId] = useState<string | null>(null);
   const [regeneratingFieldId, setRegeneratingFieldId] = useState<string | null>(null);
-  const [bulkRunning, setBulkRunning] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
   const lastPersistedRef = useRef<string>("");
 
   // Hydrate from server data.
@@ -250,28 +246,18 @@ export function ApplyDrafts() {
     };
   }, []);
 
-  function startStream(jobId: string, regenerateFieldId: string | null) {
+  function startStream(jobId: string, targetFieldId: string) {
     if (subscribeRef.current) {
       subscribeRef.current();
       subscribeRef.current = null;
     }
-    if (regenerateFieldId) {
-      setRegeneratingFieldId(regenerateFieldId);
-      setStreamingFieldId(regenerateFieldId);
-    } else {
-      setBulkRunning(true);
-      setStreamingFieldId(null);
-    }
-    setStreamingJobId(jobId);
+    setRegeneratingFieldId(targetFieldId);
+    setStreamingFieldId(targetFieldId);
 
     subscribeRef.current = subscribeToDraftJob(jobId, {
       onDraft: (d) => {
         applyDraftToState(d);
-        if (regenerateFieldId) {
-          if (d.fieldId === regenerateFieldId) setStreamingFieldId(null);
-        } else {
-          setStreamingFieldId(d.fieldId);
-        }
+        if (d.fieldId === targetFieldId) setStreamingFieldId(null);
       },
       onDone: (count) => {
         setStatusMessage(`Drafted ${count} answer(s).`);
@@ -281,36 +267,11 @@ export function ApplyDrafts() {
         setErrorMessage(`Drafting failed: ${reason}`);
       },
       onClose: () => {
-        setStreamingJobId(null);
         setStreamingFieldId(null);
         setRegeneratingFieldId(null);
-        setBulkRunning(false);
         subscribeRef.current = null;
       },
     });
-  }
-
-  async function handleDraftAll() {
-    if (fields.length === 0) return;
-    setErrorMessage(null);
-    try {
-      const res = await startDraftJob({
-        reportId,
-        fields,
-        applyUrl: applyUrl ?? undefined,
-      });
-      // Mirror into the global job store so the JobLogPanel can show output.
-      useJobStore.getState().registerJob({
-        jobId: res.jobId,
-        kind: res.kind,
-        startedAt: res.startedAt,
-      });
-      ensureJobSubscription(res.jobId);
-      startStream(res.jobId, null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`Failed to start drafting: ${msg}`);
-    }
   }
 
   async function handleRegenerate(fieldId: string) {
@@ -434,14 +395,6 @@ export function ApplyDrafts() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => void handleDraftAll()}
-              disabled={bulkRunning || streamingJobId !== null}
-              className="rounded border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {bulkRunning ? "Drafting…" : "Draft all"}
-            </button>
-            <button
-              type="button"
               onClick={() => {
                 setFields([]);
                 setStatusMessage("Cleared scraped fields. Run scrape again to reload.");
@@ -455,28 +408,19 @@ export function ApplyDrafts() {
         )}
 
         {fields.length > 0 && (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section>
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Fields ({fields.length})
-              </h2>
-              <FieldsList fields={fields} highlightFieldId={focusedFieldId} />
-            </section>
-            <section>
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Drafts ({totalDrafts})
-              </h2>
-              <DraftsList
-                fields={fields}
-                drafts={draftsByField}
-                regeneratingFieldId={regeneratingFieldId}
-                streamingFieldId={streamingFieldId}
-                onChangeAnswer={handleAnswerChange}
-                onRegenerate={(id) => void handleRegenerate(id)}
-                onFocusField={setFocusedFieldId}
-              />
-            </section>
-          </div>
+          <section>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Questions ({fields.length}) · Drafts ({totalDrafts})
+            </h2>
+            <DraftsList
+              fields={fields}
+              drafts={draftsByField}
+              regeneratingFieldId={regeneratingFieldId}
+              streamingFieldId={streamingFieldId}
+              onChangeAnswer={handleAnswerChange}
+              onRegenerate={(id) => void handleRegenerate(id)}
+            />
+          </section>
         )}
       </div>
     </>

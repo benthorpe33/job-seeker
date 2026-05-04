@@ -24,19 +24,20 @@ export function DraftsList({
   if (fields.length === 0) {
     return (
       <p className="rounded border border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
-        Drafts appear here once a field list is loaded and "Draft all" runs.
+        No questions loaded yet. Run a scrape or paste the form to extract questions.
       </p>
     );
   }
   return (
     <div className="flex flex-col gap-3">
-      {fields.map((field) => {
+      {fields.map((field, idx) => {
         const draft = drafts[field.id] ?? null;
         return (
           <DraftCard
             key={field.id}
             field={field}
             draft={draft}
+            ordinal={idx + 1}
             regenerating={regeneratingFieldId === field.id}
             streaming={streamingFieldId === field.id}
             onChange={(v) => onChangeAnswer(field.id, v)}

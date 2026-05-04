@@ -5,6 +5,7 @@ import type { DraftAnswer, ScrapedField } from "@job-seeker/shared";
 type Props = {
   field: ScrapedField | null;
   draft: DraftAnswer | null;
+  ordinal?: number;
   regenerating: boolean;
   streaming: boolean;
   onChange: (next: string) => void;
@@ -24,6 +25,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 export function DraftCard({
   field,
   draft,
+  ordinal,
   regenerating,
   streaming,
   onChange,
@@ -71,7 +73,24 @@ export function DraftCard({
       className="rounded border border-slate-800 bg-slate-900/40 p-4"
     >
       <header className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-200">{placeholderLabel}</h3>
+        <h3 className="flex flex-wrap items-baseline gap-2 text-sm font-medium text-slate-200">
+          {ordinal !== undefined && (
+            <span className="font-mono text-[11px] text-slate-500">
+              {String(ordinal).padStart(2, "0")}
+            </span>
+          )}
+          <span>{placeholderLabel}</span>
+          {field?.required && (
+            <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-rose-300">
+              required
+            </span>
+          )}
+          {field?.type && (
+            <span className="text-[11px] font-normal text-slate-500">
+              {field.type}
+            </span>
+          )}
+        </h3>
         <div className="flex items-center gap-2">
           {streaming && (
             <span className="rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-sky-300">
@@ -80,7 +99,7 @@ export function DraftCard({
           )}
           {regenerating && !streaming && (
             <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
-              regenerating
+              {draft ? "regenerating" : "generating"}
             </span>
           )}
         </div>
@@ -88,7 +107,7 @@ export function DraftCard({
 
       {!draft ? (
         <p className="rounded bg-slate-950/40 px-3 py-2 text-xs italic text-slate-500">
-          Waiting for draft…
+          {regenerating ? "Generating…" : "Click Generate to draft an answer."}
         </p>
       ) : (
         <textarea
@@ -129,7 +148,7 @@ export function DraftCard({
             disabled={!field || regenerating || streaming}
             className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Regenerate
+            {draft ? "Regenerate" : "Generate"}
           </button>
         </div>
       </div>
