@@ -34,10 +34,14 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 // ── API detection ───────────────────────────────────────────────────
 
+const withGhContent = (url) => url.includes('content=true')
+  ? url
+  : url + (url.includes('?') ? '&' : '?') + 'content=true';
+
 function detectApi(company) {
   // Greenhouse: explicit api field
   if (company.api && company.api.includes('greenhouse')) {
-    return { type: 'greenhouse', url: company.api };
+    return { type: 'greenhouse', url: withGhContent(company.api) };
   }
 
   const url = company.careers_url || '';
@@ -65,7 +69,7 @@ function detectApi(company) {
   if (ghEuMatch && !company.api) {
     return {
       type: 'greenhouse',
-      url: `https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`,
+      url: withGhContent(`https://boards-api.greenhouse.io/v1/boards/${ghEuMatch[1]}/jobs`),
     };
   }
 
