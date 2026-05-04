@@ -1,11 +1,21 @@
 #!/usr/bin/env node
-// Pre-fetch JDs for failed batch ids → /tmp/batch-jd-{id}.txt.
+// Pre-fetch JDs for failed batch ids → {tmpdir}/batch-jd-{id}.txt.
 // Strategy:
 //   - Ashby URLs: hit /posting-api/job-board/{slug} (public), filter by job id.
 //   - Greenhouse URLs: hit boards-api.greenhouse.io/v1/boards/{slug}/jobs/{id}.
 //   - Other (Taleo, easyapply, custom) → skip (manual fetch needed).
+//
+// js-6d4: use os.tmpdir() rather than literal '/tmp'. On Windows, Node resolves
+// '/tmp' to C:\tmp while Git Bash maps '/tmp' to %LOCALAPPDATA%\Temp — so a
+// hardcoded '/tmp' here writes to a directory the bash worker (batch-runner.sh)
+// never reads. os.tmpdir() returns %LOCALAPPDATA%\Temp on Windows, which is the
+// same directory bash's '/tmp' mapping points at, so producer and consumer agree.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const TMP = tmpdir();
 
 const STATE = readFileSync('batch/batch-state.tsv', 'utf-8').split('\n');
 const INPUT = readFileSync('batch/batch-input.tsv', 'utf-8').split('\n');
@@ -92,11 +102,11 @@ for (const id of failedIds) {
       results.skip.push(`${id} unsupported url: ${url.slice(0,80)}`);
       continue;
     }
-    const path = `/tmp/batch-jd-${id}.txt`;
+    const path = join(TMP, `batch-jd-${id}.txt`);
     writeFileSync(path, text);
     // Sidecar URL marker — batch-runner.sh checks this to detect stale JDs
     // when batch-input.tsv changes the URL for an existing id (js-oe9).
-    writeFileSync(`/tmp/batch-jd-${id}.url`, url);
+    writeFileSync(join(TMP, `batch-jd-${id}.url`), url);
     results.ok.push(`${id} → ${path} (${text.length} chars)`);
   } catch (e) {
     results.fail.push(`${id}: ${e.message}`);

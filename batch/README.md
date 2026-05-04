@@ -78,3 +78,9 @@ A PID-based lock file (`batch-runner.pid`) prevents concurrent batch runs. If a 
 - `claude` CLI in PATH (Claude Max subscription for default model)
 - Node.js >= 18, Playwright chromium installed (`npm run doctor` to verify)
 - `batch-input.tsv` with at least one offer
+
+## Windows /tmp gotcha (js-6d4)
+
+`batch-runner.sh` reads pre-fetched JDs from `/tmp/batch-jd-{id}.txt`. On Git Bash for Windows, `/tmp` maps to `%LOCALAPPDATA%\Temp` — not to `C:\tmp`. Any Node script that writes JDs for the worker to consume must use `os.tmpdir()` (which also returns `%LOCALAPPDATA%\Temp` on Windows) rather than a literal `/tmp/...` string. A hardcoded `/tmp/...` in Node resolves to `C:\tmp\...` on Windows, so the worker silently falls back to WebFetch and often produces a degraded report (title/company only).
+
+`scripts/prefetch-jds.mjs` uses `os.tmpdir()` — keep it that way. `test-all.mjs` includes a smoke test (`4b. Prefetch tmpdir invariant`) that asserts Node's tmpdir and bash's `/tmp` point at the same directory.

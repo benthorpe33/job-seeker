@@ -12,7 +12,8 @@
  */
 
 import { execSync, execFileSync } from 'child_process';
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
+import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -122,6 +123,10 @@ try {
 
 if (!QUICK) {
   console.log('\n4. Dashboard build');
+  // js-6d4: '/tmp' is bash-resolved (run() execs through the shell), so on
+  // Windows Git Bash this maps to %LOCALAPPDATA%\Temp, not C:\tmp. test-all.mjs
+  // therefore requires a POSIX-y shell — running it from cmd.exe or pwsh would
+  // resolve /tmp to C:\tmp and the build artifact would land somewhere else.
   const goBuild = run('cd dashboard && go build -o /tmp/career-dashboard-test . 2>&1');
   if (goBuild !== null) {
     pass('Dashboard compiles');
@@ -130,6 +135,33 @@ if (!QUICK) {
   }
 } else {
   console.log('\n4. Dashboard build (skipped --quick)');
+}
+
+// ── 4b. PREFETCH TMPDIR INVARIANT (js-6d4) ──────────────────────
+// The bash batch worker reads JD files from '/tmp/batch-jd-{id}.txt' (bash's
+// /tmp). prefetch-jds.mjs (Node) writes them via os.tmpdir(). This test
+// asserts Node's tmpdir and bash's /tmp resolve to the same directory — the
+// invariant the prefetch fix depends on. If it fails on Windows, /tmp likely
+// got resolved by Node to C:\tmp instead of going through Git Bash.
+
+console.log('\n4b. Prefetch tmpdir invariant (js-6d4)');
+{
+  const stamp = `${process.pid}-${Date.now()}`;
+  const fname = `js-6d4-tmpdir-probe-${stamp}.txt`;
+  const nodePath = join(tmpdir(), fname);
+  try {
+    writeFileSync(nodePath, 'probe');
+    const bashSees = run(`test -r /tmp/${fname} && echo ok`);
+    if (bashSees === 'ok') {
+      pass('Node os.tmpdir() and bash /tmp resolve to same directory');
+    } else {
+      fail(`Bash cannot read ${nodePath} via /tmp/${fname} — prefetch JDs will be invisible to batch-runner.sh`);
+    }
+  } catch (e) {
+    warn(`tmpdir probe could not run: ${e.message}`);
+  } finally {
+    try { unlinkSync(nodePath); } catch { /* ignore */ }
+  }
 }
 
 // ── 5. DATA CONTRACT ────────────────────────────────────────────
