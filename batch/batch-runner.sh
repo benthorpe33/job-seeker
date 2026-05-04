@@ -477,7 +477,13 @@ process_offer() {
   # Does NOT fire on `set -e` aborts or signal kills (verified empirically);
   # those are handled by the startup sweep in main() which clears any
   # prior-run leftovers.
-  trap 'rm -f "$facts_pack_file" "$phase1_file" 2>/dev/null || true' RETURN
+  #
+  # Defensive expansion (${var:-}) is required because (a) phase1_file is
+  # mktemp'd later in this function, so an early-return triage failure can
+  # fire the trap before phase1_file is set, and (b) bash RETURN traps set
+  # inside a function persist globally without `set -T`, so this trap also
+  # fires on main()'s return when both vars are out of scope.
+  trap 'rm -f "${facts_pack_file:-}" "${phase1_file:-}" 2>/dev/null || true' RETURN
 
   : > "$facts_pack_file"
   if [[ -f "$PROJECT_DIR/cv.md" ]]; then
