@@ -38,6 +38,7 @@ batch/batch-input.tsv.*
 batch/jd-*.txt
 batch/jd-*.json
 batch/*-board.json
+batch/.facts-pack-*.md
 batch/tracker-additions/**/*.tsv
 !batch/tracker-additions/.gitkeep
 jds/*
@@ -56,6 +57,12 @@ modes/_profile.md
 
 # Ad-hoc / company-specific scratch files
 doppel-api.json
+
+# JD scratch files at repo root (created during ad-hoc evaluations)
+/jd-*.md
+/*-jd.md
+/*-jd-snapshot.md
+/*-jd-content.md
 
 # Secrets (never commit — use .env.example as template)
 .env
