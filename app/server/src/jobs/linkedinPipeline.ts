@@ -60,15 +60,19 @@ export const STAGE_DEFS_BASE: ReadonlyArray<StageDef> = [
     args: [],
   },
   {
+    // js-q4s: prefetch runs BEFORE filter so the filter can use the ATS API's
+    // primary+secondary location data (written to {tmpdir}/batch-jd-{id}.location.json)
+    // as source of truth, instead of the LinkedIn-derived notes column which
+    // is empty for many postings (Mistral, Cohere, OpenAI, Perplexity).
     stageNum: 5,
-    name: "Filter already-tracked + non-target-location URLs",
-    kind: "filter-batch-input",
-    args: [],
+    name: "Pre-fetch JDs (Greenhouse/Ashby)",
+    kind: "prefetch-jds",
+    args: ["--all"],
   },
   {
     stageNum: 6,
-    name: "Pre-fetch JDs (Greenhouse/Ashby)",
-    kind: "prefetch-jds",
+    name: "Filter already-tracked + non-target-location URLs",
+    kind: "filter-batch-input",
     args: [],
   },
   {

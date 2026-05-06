@@ -72,8 +72,8 @@ test("pipeline runs all 9 stages on the happy path", async () => {
   }
 });
 
-test("pipeline marks stage 6 (prefetch-jds) skipped when prefetchJds=false", async () => {
-  const root = mkdtempSync(join(tmpdir(), "js-pipeline-skip6-"));
+test("pipeline marks stage 5 (prefetch-jds) skipped when prefetchJds=false", async () => {
+  const root = mkdtempSync(join(tmpdir(), "js-pipeline-skip5-"));
   const registry = new JobRegistry();
   try {
     const p = new LinkedinPipeline(buildOpts(registry, root, makeFactory({})), false);
@@ -81,10 +81,10 @@ test("pipeline marks stage 6 (prefetch-jds) skipped when prefetchJds=false", asy
     const snap = p.snapshot();
     assert.equal(snap.status, "completed");
     const prefetchStage = snap.stages.find((s) => s.kind === "prefetch-jds")!;
-    assert.equal(prefetchStage.stageNum, 6);
+    assert.equal(prefetchStage.stageNum, 5);
     assert.equal(prefetchStage.status, "skipped");
     assert.equal(prefetchStage.jobId, null);
-    for (const num of [1, 2, 3, 4, 5, 7, 8, 9]) {
+    for (const num of [1, 2, 3, 4, 6, 7, 8, 9]) {
       const s = snap.stages.find((x) => x.stageNum === num)!;
       assert.equal(s.status, "completed", `stage ${num} should complete`);
     }
@@ -196,13 +196,14 @@ test("pipeline emits stage:start, stage:done, pipeline:done in order", async () 
 
     assert.equal(log[log.length - 1]!.type, "pipeline:done");
 
-    // prefetch-jds is now stage 6 — the skipped one when prefetchJds=false.
-    const prefetchEvents = log.filter((e) => e.num === 6);
+    // js-q4s: prefetch-jds was reordered to stage 5 (was 6) so the filter
+    // can read the ATS-derived location JSON it writes.
+    const prefetchEvents = log.filter((e) => e.num === 5);
     assert.equal(prefetchEvents.length, 1);
     assert.equal(prefetchEvents[0]!.type, "stage:done");
     assert.equal(prefetchEvents[0]!.status, "skipped");
 
-    for (const num of [1, 2, 3, 4, 5, 7, 8, 9]) {
+    for (const num of [1, 2, 3, 4, 6, 7, 8, 9]) {
       const startIdx = log.findIndex(
         (e) => e.type === "stage:start" && e.num === num,
       );
@@ -223,12 +224,13 @@ test("pipeline resume from stage 1 reruns everything including previously-skippe
   try {
     const p = new LinkedinPipeline(buildOpts(registry, root, makeFactory({})), false);
     await p.run(1);
-    // prefetch-jds is now stage 6 — the one that's skipped when prefetchJds=false.
-    const prefetchFirst = p.snapshot().stages.find((s) => s.stageNum === 6)!;
+    // js-q4s: prefetch-jds is now stage 5 (reordered before filter). It's the
+    // one that's skipped when prefetchJds=false.
+    const prefetchFirst = p.snapshot().stages.find((s) => s.stageNum === 5)!;
     assert.equal(prefetchFirst.status, "skipped");
 
     await p.run(1);
-    const prefetchSecond = p.snapshot().stages.find((s) => s.stageNum === 6)!;
+    const prefetchSecond = p.snapshot().stages.find((s) => s.stageNum === 5)!;
     assert.equal(prefetchSecond.status, "skipped", "skipped sticks across runs");
     assert.equal(prefetchSecond.jobId, null);
   } finally {

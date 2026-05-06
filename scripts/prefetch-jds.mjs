@@ -31,13 +31,21 @@ for (const line of INPUT.slice(1)) {
 }
 
 // js-0zl: --ids=a,b,c selects an explicit id list (preemptive prefetch from
-// batch-runner.sh). Without the flag, fall back to the original behavior:
-// scan batch-state.tsv for status=='failed' rows (post-failure recovery).
+// batch-runner.sh).
+// js-q4s: --all targets every id in batch-input.tsv. Used by the LinkedIn
+// pipeline's reordered prefetch stage so the downstream filter has location
+// JSON for every candidate row.
+// Without either flag, fall back to the original behavior: scan
+// batch-state.tsv for status=='failed' rows (post-failure recovery).
 const idsArg = process.argv.find(a => a.startsWith('--ids='));
+const allFlag = process.argv.includes('--all');
 let targetIds;
 if (idsArg) {
   targetIds = idsArg.slice('--ids='.length).split(',').map(s => s.trim()).filter(Boolean);
   console.log(`Target ids (--ids): ${targetIds.join(', ')}`);
+} else if (allFlag) {
+  targetIds = Array.from(urlById.keys());
+  console.log(`Target ids (--all): ${targetIds.length} rows from batch-input.tsv`);
 } else {
   const STATE = readFileSync('batch/batch-state.tsv', 'utf-8').split('\n');
   targetIds = [];
@@ -57,9 +65,23 @@ async function fetchAshby(slug, jobId) {
   const json = await res.json();
   const job = (json.jobs || []).find(j => j.id === jobId);
   if (!job) throw new Error(`Ashby ${slug}: job ${jobId} not in board`);
+
+  // js-XXX: Ashby postings can list multiple eligible locations via
+  // secondaryLocations. Folding them into a single "Locations:" line ensures
+  // the triage worker sees every eligible city — without this, multi-city
+  // postings (e.g. Ramp's "SF + NYC") get scored as if they were single-city
+  // and locations the candidate prefers get silently dropped.
+  const secondary = Array.isArray(job.secondaryLocations) ? job.secondaryLocations : [];
+  const secondaryNames = secondary.map(s => s?.location).filter(Boolean);
+  const allLocations = [job.location, ...secondaryNames].filter(Boolean);
+  const locationLine = allLocations.length > 1
+    ? `Locations: ${allLocations.join(' | ')}`
+    : `Location: ${job.location || ''}`;
+
   const parts = [
     `Title: ${job.title}`,
-    `Location: ${job.location}`,
+    locationLine,
+    `Workplace: ${job.workplaceType || ''}${typeof job.isRemote === 'boolean' ? ` (isRemote=${job.isRemote})` : ''}`,
     `Department: ${job.departmentName || ''}`,
     `Team: ${job.teamName || ''}`,
     `Employment: ${job.employmentType || ''}`,
@@ -70,7 +92,10 @@ async function fetchAshby(slug, jobId) {
     '--- Description ---',
     job.descriptionPlain || '(no description)',
   ];
-  return parts.join('\n');
+  return {
+    text: parts.join('\n'),
+    location: { primary: job.location || '', secondary: secondaryNames, source: 'ashby' },
+  };
 }
 
 async function fetchGreenhouse(slug, jobId) {
@@ -79,9 +104,21 @@ async function fetchGreenhouse(slug, jobId) {
   if (!res.ok) throw new Error(`Greenhouse ${slug}/${jobId}: HTTP ${res.status}`);
   const j = await res.json();
   const stripHtml = s => (s || '').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-  return [
+
+  // Greenhouse multi-office postings populate the `offices` array. Surface
+  // every office name so the worker doesn't lose eligible cities (parity with
+  // the Ashby secondaryLocations fix).
+  const officeNames = (j.offices || []).map(o => o?.name).filter(Boolean);
+  const primary = j.location?.name || '';
+  const secondary = officeNames.filter(n => n !== primary);
+  const allLocations = [primary, ...secondary].filter(Boolean);
+  const locationLine = allLocations.length > 1
+    ? `Locations: ${allLocations.join(' | ')}`
+    : `Location: ${primary}`;
+
+  const text = [
     `Title: ${j.title}`,
-    `Location: ${j.location?.name || ''}`,
+    locationLine,
     `Department: ${(j.departments||[]).map(d=>d.name).join('; ')}`,
     `Updated: ${j.updated_at || ''}`,
     `URL: ${j.absolute_url || ''}`,
@@ -89,6 +126,7 @@ async function fetchGreenhouse(slug, jobId) {
     '--- Description ---',
     stripHtml(j.content),
   ].join('\n');
+  return { text, location: { primary, secondary, source: 'greenhouse' } };
 }
 
 const results = { ok: [], skip: [], fail: [] };
@@ -97,29 +135,38 @@ for (const id of targetIds) {
   const url = urlById.get(id);
   if (!url) { results.skip.push(`${id} no-url`); continue; }
   try {
-    let text = null;
+    let result = null;
     let m;
     if ((m = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)\/([0-9a-f-]{36})/i))) {
       const slug = m[1];
       const jobId = m[2];
-      text = await fetchAshby(slug, jobId);
+      result = await fetchAshby(slug, jobId);
     } else if ((m = url.match(/job-boards\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
-      text = await fetchGreenhouse(m[1], m[2]);
+      result = await fetchGreenhouse(m[1], m[2]);
     } else if ((m = url.match(/(?:boards|grnh\.se)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
-      text = await fetchGreenhouse(m[1], m[2]);
+      result = await fetchGreenhouse(m[1], m[2]);
     } else if ((m = url.match(/current\.com.*gh_jid=(\d+)/))) {
       // Try common Greenhouse slug for Current
-      text = await fetchGreenhouse('current', m[1]);
+      result = await fetchGreenhouse('current', m[1]);
     }
-    if (!text) {
+    if (!result) {
       results.skip.push(`${id} unsupported url: ${url.slice(0,80)}`);
       continue;
     }
+    const { text, location } = result;
     const path = join(TMP, `batch-jd-${id}.txt`);
     writeFileSync(path, text);
     // Sidecar URL marker — batch-runner.sh checks this to detect stale JDs
     // when batch-input.tsv changes the URL for an existing id (js-oe9).
     writeFileSync(join(TMP, `batch-jd-${id}.url`), url);
+    // js-q4s: Sidecar location JSON — filter-batch-input.mjs reads this to
+    // drop non-target-location rows using the ATS API as source of truth
+    // rather than the LinkedIn-derived notes column (which is empty for
+    // Mistral / Cohere / many other postings).
+    writeFileSync(
+      join(TMP, `batch-jd-${id}.location.json`),
+      JSON.stringify(location),
+    );
     results.ok.push(`${id} → ${path} (${text.length} chars)`);
   } catch (e) {
     results.fail.push(`${id}: ${e.message}`);
