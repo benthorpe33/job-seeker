@@ -12,6 +12,12 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  parseApplicationsRows,
+  parsePipelineRows,
+  looksLikeDuplicate,
+} from './lib/dedup.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const RESOLVED = resolve(REPO, 'data', 'linkedin-resolved.json');
@@ -19,18 +25,7 @@ const APPS = resolve(REPO, 'data', 'applications.md');
 const PIPE = resolve(REPO, 'data', 'pipeline.md');
 const OUT = resolve(REPO, 'data', 'linkedin-pipeline-preview.md');
 
-const norm = (s) =>
-  (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const tokens = (s, stop) => {
-  const arr = norm(s).split(' ').filter((t) => t.length > 2 && !stop.has(t));
-  return new Set(arr);
-};
-const STOP = new Set([
-  'senior', 'staff', 'principal', 'lead', 'engineer', 'scientist', 'data',
-  'analyst', 'developer', 'software', 'technical', 'member',
-  'forward', 'deployed', 'applied', 'solutions', 'architect', 'machine',
-  'learning', 'analytics', 'product', 'and', 'the', 'for',
-]);
+const APPEND_DEDUP_OPTS = { threshold: 2, substringCompany: true };
 
 function cleanCompany(cardText) {
   // LinkedIn inserts ", Verified" badge text between title and company. The real company
@@ -56,48 +51,17 @@ function cleanLocation(cardText) {
   return '';
 }
 
-function parseAppsMd(md) {
-  const rows = [];
-  for (const line of md.split('\n')) {
-    if (!line.startsWith('|') || line.startsWith('|---') || /\|\s*#\s*\|/.test(line)) continue;
-    const c = line.split('|').map((x) => x.trim());
-    if (c.length < 5 || !c[3] || !c[4]) continue;
-    rows.push({ company: c[3], role: c[4] });
-  }
-  return rows;
-}
-
-function parsePipelineMd(md) {
-  // Pipeline format: - [ ] URL | Company | Role | Location...
-  const rows = [];
-  for (const line of md.split('\n')) {
-    if (!/^- \[[ x]\]/.test(line)) continue;
-    const parts = line.replace(/^- \[[ x]\]\s*/, '').split(' | ');
-    if (parts.length < 3) continue;
-    rows.push({ url: parts[0].trim(), company: parts[1]?.trim() || '', role: parts[2]?.trim() || '' });
-  }
-  return rows;
-}
-
-function isDup(saved, existing) {
-  const cn = norm(saved.company);
-  const en = norm(existing.company);
-  if (!cn || !en) return false;
-  // Same company name (allow substring match for "Anthropic" vs "Anthropic Inc")
-  const sameCompany = cn === en || cn.includes(en) || en.includes(cn);
-  if (!sameCompany) return false;
-  // Same role: ≥2 shared non-stopword tokens OR exact normalized match
-  if (norm(saved.role) === norm(existing.role)) return true;
-  const ts = tokens(saved.role, STOP);
-  const te = tokens(existing.role, STOP);
-  let shared = 0;
-  for (const t of ts) if (te.has(t)) shared++;
-  return shared >= 2;
-}
-
 function dupReason(saved, appsRows, pipeRows) {
-  for (const a of appsRows) if (isDup(saved, a)) return `applications.md: ${a.company} — ${a.role}`;
-  for (const p of pipeRows) if (isDup(saved, p)) return `pipeline.md: ${p.company} — ${p.role}`;
+  for (const a of appsRows) {
+    if (looksLikeDuplicate(saved, a, APPEND_DEDUP_OPTS)) {
+      return `applications.md: ${a.company} — ${a.role}`;
+    }
+  }
+  for (const p of pipeRows) {
+    if (looksLikeDuplicate(saved, p, APPEND_DEDUP_OPTS)) {
+      return `pipeline.md: ${p.company} — ${p.role}`;
+    }
+  }
   return null;
 }
 
@@ -107,8 +71,8 @@ if (!existsSync(RESOLVED)) {
   process.exit(1);
 }
 const resolved = JSON.parse(readFileSync(RESOLVED, 'utf8'));
-const appsRows = existsSync(APPS) ? parseAppsMd(readFileSync(APPS, 'utf8')) : [];
-const pipeRows = existsSync(PIPE) ? parsePipelineMd(readFileSync(PIPE, 'utf8')) : [];
+const appsRows = existsSync(APPS) ? parseApplicationsRows(readFileSync(APPS, 'utf8')) : [];
+const pipeRows = existsSync(PIPE) ? parsePipelineRows(readFileSync(PIPE, 'utf8')) : [];
 
 const seenJobIds = new Set();
 const buckets = { propose: [], dup: [], easyApply: [], closed: [], unknown: [], jobIdDup: [] };

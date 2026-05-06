@@ -7,6 +7,12 @@ import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  parseApplicationsRows,
+  parsePipelineRows,
+  looksLikeDuplicate,
+} from './lib/dedup.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const RESOLVED = resolve(REPO, 'data', 'linkedin-resolved.json');
@@ -17,14 +23,7 @@ const PIPE = resolve(REPO, 'data', 'pipeline.md');
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--yes');
 
-const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const STOP = new Set([
-  'senior', 'staff', 'principal', 'lead', 'engineer', 'scientist', 'data',
-  'analyst', 'developer', 'software', 'technical', 'member',
-  'forward', 'deployed', 'applied', 'solutions', 'architect', 'machine',
-  'learning', 'analytics', 'product', 'and', 'the', 'for',
-]);
-const tokens = (s) => new Set(norm(s).split(' ').filter((t) => t.length > 2 && !STOP.has(t)));
+const APPEND_DEDUP_OPTS = { threshold: 2, substringCompany: true };
 
 function cleanCompany(cardText) {
   for (let i = 1; i < (cardText || []).length; i++) {
@@ -44,45 +43,14 @@ function cleanLocation(cardText) {
   }
   return '';
 }
-function parseAppsMd(md) {
-  const rows = [];
-  for (const line of md.split('\n')) {
-    if (!line.startsWith('|') || line.startsWith('|---') || /\|\s*#\s*\|/.test(line)) continue;
-    const c = line.split('|').map((x) => x.trim());
-    if (c.length < 5 || !c[3] || !c[4]) continue;
-    rows.push({ company: c[3], role: c[4] });
-  }
-  return rows;
-}
-function parsePipelineMd(md) {
-  const rows = [];
-  for (const line of md.split('\n')) {
-    if (!/^- \[[ x]\]/.test(line)) continue;
-    const parts = line.replace(/^- \[[ x]\]\s*/, '').split(' | ');
-    if (parts.length < 3) continue;
-    rows.push({ url: parts[0].trim(), company: parts[1]?.trim() || '', role: parts[2]?.trim() || '' });
-  }
-  return rows;
-}
-function isDup(saved, existing) {
-  const cn = norm(saved.company), en = norm(existing.company);
-  if (!cn || !en) return false;
-  const sameCo = cn === en || cn.includes(en) || en.includes(cn);
-  if (!sameCo) return false;
-  if (norm(saved.role) === norm(existing.role)) return true;
-  const ts = tokens(saved.role), te = tokens(existing.role);
-  let shared = 0;
-  for (const t of ts) if (te.has(t)) shared++;
-  return shared >= 2;
-}
 
 // --- main ---
 const resolved = JSON.parse(readFileSync(RESOLVED, 'utf8'));
 const saved = JSON.parse(readFileSync(SAVED, 'utf8'));
 const savedById = new Map(saved.jobs.map((j) => [j.jobId, j]));
-const appsRows = parseAppsMd(readFileSync(APPS, 'utf8'));
+const appsRows = parseApplicationsRows(readFileSync(APPS, 'utf8'));
 const pipeMd = readFileSync(PIPE, 'utf8');
-const pipeRows = parsePipelineMd(pipeMd);
+const pipeRows = parsePipelineRows(pipeMd);
 const pipeUrls = new Set(pipeRows.map((r) => r.url));
 
 const seen = new Set();
@@ -101,8 +69,8 @@ for (const r of resolved.resolved) {
   };
   if (!item.company || !item.role) continue;
   if (pipeUrls.has(item.applyUrl)) continue;
-  if (appsRows.some((a) => isDup(item, a))) continue;
-  if (pipeRows.some((p) => isDup(item, p))) continue;
+  if (appsRows.some((a) => looksLikeDuplicate(item, a, APPEND_DEDUP_OPTS))) continue;
+  if (pipeRows.some((p) => looksLikeDuplicate(item, p, APPEND_DEDUP_OPTS))) continue;
   propose.push(item);
 }
 

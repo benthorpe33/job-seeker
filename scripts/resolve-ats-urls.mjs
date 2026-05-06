@@ -19,6 +19,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeUrl, loadEvaluatedUrls } from './lib/reports-urls.mjs';
+import { parseApplicationsRows, looksLikeDuplicate } from './lib/dedup.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
@@ -85,55 +86,6 @@ function cacheToResult(jobId, job, entry) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function normalizeCompany(s) {
-  return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-function normalizeRole(s) {
-  return (s || '')
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function parseApplications(md) {
-  // Returns Set of normalized "company||role" keys for fuzzy dedup.
-  const lines = md.split('\n').filter((l) => l.startsWith('|') && !l.startsWith('|---') && !/\|\s*#\s*\|/.test(l));
-  const keys = new Set();
-  for (const line of lines) {
-    const cells = line.split('|').map((c) => c.trim());
-    // Format: | # | Date | Company | Role | Score | Status | ...
-    if (cells.length < 5) continue;
-    const company = cells[3];
-    const role = cells[4];
-    if (!company || !role) continue;
-    keys.add(normalizeCompany(company) + '||' + normalizeRole(role));
-  }
-  return keys;
-}
-
-function looksLikeAlreadyEvaluated(job, appKeys) {
-  const company = job.cardText?.[1] || '';
-  const role = job.cardText?.[0] || job.title || '';
-  const cn = normalizeCompany(company);
-  const rn = normalizeRole(role);
-  if (!cn || !rn) return false;
-  const key = cn + '||' + rn;
-  if (appKeys.has(key)) return true;
-  // Fuzzier: same company + ≥3 shared non-stopword tokens in role
-  const stop = new Set(['senior', 'staff', 'principal', 'lead', 'engineer', 'scientist', 'data', 'ai', 'ml', 'forward', 'deployed', 'applied', 'solutions', 'architect', 'analyst', 'developer', 'software', 'technical', 'member']);
-  const myTokens = new Set(rn.split(' ').filter((t) => t.length > 2 && !stop.has(t)));
-  for (const k of appKeys) {
-    const [kc, kr] = k.split('||');
-    if (kc !== cn) continue;
-    const theirTokens = new Set(kr.split(' ').filter((t) => t.length > 2 && !stop.has(t)));
-    let shared = 0;
-    for (const t of myTokens) if (theirTokens.has(t)) shared++;
-    if (shared >= 3) return true;
-  }
-  return false;
 }
 
 async function resolveOne(context, job) {
@@ -224,14 +176,16 @@ async function resolveOne(context, job) {
   }
   const input = JSON.parse(readFileSync(INPUT_FILE, 'utf8'));
   const appsMd = existsSync(APPS_FILE) ? readFileSync(APPS_FILE, 'utf8') : '';
-  const appKeys = parseApplications(appsMd);
-  console.log(`[resolve] loaded ${input.jobs.length} jobs, ${appKeys.size} prior applications for dedup`);
+  const apps = parseApplicationsRows(appsMd);
+  console.log(`[resolve] loaded ${input.jobs.length} jobs, ${apps.length} prior applications for dedup`);
 
   // Pre-filter: drop already-evaluated
   const candidates = [];
   const skipped = [];
   for (const j of input.jobs) {
-    if (looksLikeAlreadyEvaluated(j, appKeys)) {
+    const company = j.cardText?.[1] || '';
+    const role = j.cardText?.[0] || j.title || '';
+    if (apps.some((a) => looksLikeDuplicate({ company, role }, a, { threshold: 3 }))) {
       skipped.push({ jobId: j.jobId, title: j.cardText?.[0], company: j.cardText?.[1], reason: 'already in applications.md' });
     } else {
       candidates.push(j);
