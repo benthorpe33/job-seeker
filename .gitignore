@@ -17,6 +17,7 @@ data/scan-history.tsv
 data/.linkedin-auth.json
 data/linkedin-saved-jobs.json
 data/linkedin-resolved.json
+data/linkedin-resolved-cache.json
 data/linkedin-saved-html/
 data/linkedin-pipeline-preview.md
 data/outcomes.tsv

@@ -23,14 +23,63 @@ const REPO_ROOT = resolve(__dirname, '..');
 const AUTH_FILE = resolve(REPO_ROOT, 'data', '.linkedin-auth.json');
 const INPUT_FILE = resolve(REPO_ROOT, 'data', 'linkedin-saved-jobs.json');
 const OUTPUT_FILE = resolve(REPO_ROOT, 'data', 'linkedin-resolved.json');
+const CACHE_FILE = resolve(REPO_ROOT, 'data', 'linkedin-resolved-cache.json');
 const APPS_FILE = resolve(REPO_ROOT, 'data', 'applications.md');
+const DEFAULT_CACHE_TTL_DAYS = 30;
+const CACHE_FLUSH_EVERY = 10;
 
 const args = new Set(process.argv.slice(2));
 const HEADFUL = args.has('--headful');
+const NO_CACHE = args.has('--no-cache');
 const LIMIT = (() => {
   const a = process.argv.find((x) => x.startsWith('--limit='));
   return a ? parseInt(a.split('=')[1], 10) : null;
 })();
+const CACHE_TTL_DAYS = (() => {
+  const a = process.argv.find((x) => x.startsWith('--cache-ttl-days='));
+  if (!a) return DEFAULT_CACHE_TTL_DAYS;
+  const n = parseInt(a.split('=')[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CACHE_TTL_DAYS;
+})();
+
+function loadCache() {
+  if (NO_CACHE || !existsSync(CACHE_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(CACHE_FILE, 'utf8'));
+  } catch (e) {
+    console.warn(`[cache] failed to read ${CACHE_FILE}: ${e.message} — treating as empty`);
+    return {};
+  }
+}
+
+function saveCache(cache) {
+  writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+}
+
+function isCacheHit(entry) {
+  if (!entry) return false;
+  if (!entry.applyKind || entry.applyKind === 'unknown') return false;
+  if (entry.error) return false;
+  if (!entry.resolvedAt) return false;
+  const ts = Date.parse(entry.resolvedAt);
+  if (!Number.isFinite(ts)) return false;
+  const ageMs = Date.now() - ts;
+  return ageMs < CACHE_TTL_DAYS * 86400_000;
+}
+
+function cacheToResult(jobId, job, entry) {
+  return {
+    jobId,
+    title: job.cardText?.[0] || job.title || '',
+    company: job.cardText?.[1] || '',
+    location: job.cardText?.[2] || '',
+    listUrl: job.listUrl,
+    applyUrl: entry.applyUrl ?? null,
+    applyKind: entry.applyKind,
+    error: entry.error ?? null,
+    fromCache: true,
+  };
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -188,35 +237,74 @@ async function resolveOne(context, job) {
   }
   console.log(`[resolve] ${candidates.length} candidates after dedup (${skipped.length} skipped as already-evaluated)`);
 
-  const todo = LIMIT ? candidates.slice(0, LIMIT) : candidates;
+  // Partition candidates by cache state. Cached hits skip Playwright entirely.
+  const cache = loadCache();
+  const cachedResults = [];
+  const uncached = [];
+  for (const j of candidates) {
+    const entry = cache[j.jobId];
+    if (isCacheHit(entry)) {
+      cachedResults.push(cacheToResult(j.jobId, j, entry));
+    } else {
+      uncached.push(j);
+    }
+  }
+  console.log(`[resolve] cache: ${cachedResults.length} hits, ${uncached.length} to resolve (TTL=${CACHE_TTL_DAYS}d${NO_CACHE ? ', --no-cache' : ''})`);
+
+  const todo = LIMIT ? uncached.slice(0, LIMIT) : uncached;
   console.log(`[resolve] resolving ${todo.length} jobs${LIMIT ? ` (--limit=${LIMIT})` : ''}`);
 
-  const browser = await chromium.launch({ headless: !HEADFUL });
-  const context = await browser.newContext({ storageState: AUTH_FILE });
-  // One quick auth check
-  const probe = await context.newPage();
-  await probe.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' }).catch(() => {});
-  if (/\/login|\/checkpoint/.test(probe.url())) {
-    console.error('[resolve] session expired — re-run linkedin-saved-jobs.mjs --login');
+  const fresh = [];
+
+  if (todo.length > 0) {
+    const browser = await chromium.launch({ headless: !HEADFUL });
+    const context = await browser.newContext({ storageState: AUTH_FILE });
+    // One quick auth check
+    const probe = await context.newPage();
+    await probe.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    if (/\/login|\/checkpoint/.test(probe.url())) {
+      console.error('[resolve] session expired — re-run linkedin-saved-jobs.mjs --login');
+      await browser.close();
+      process.exit(2);
+    }
+    await probe.close();
+
+    for (let i = 0; i < todo.length; i++) {
+      const job = todo[i];
+      const r = await resolveOne(context, job);
+      fresh.push(r);
+      // Upsert into cache. Even error/unknown rows are written so a follow-up
+      // run with stale cache logic doesn't pretend it's a hit; isCacheHit()
+      // filters them on read.
+      cache[r.jobId] = {
+        applyUrl: r.applyUrl ?? null,
+        applyKind: r.applyKind,
+        error: r.error ?? null,
+        resolvedAt: new Date().toISOString(),
+      };
+      const tag = r.applyKind === 'offsite' ? '✓' : r.applyKind === 'easyApply' ? '~' : r.applyKind === 'closed' ? '✗' : '?';
+      console.log(`[${i + 1}/${todo.length}] ${tag} ${r.company} — ${r.title} → ${r.applyKind}${r.applyUrl ? ' ' + r.applyUrl.slice(0, 80) : ''}${r.error ? ' err=' + r.error : ''}`);
+      // Flush periodically so a crash mid-loop preserves progress.
+      if (!NO_CACHE && (i + 1) % CACHE_FLUSH_EVERY === 0) {
+        try { saveCache(cache); } catch (e) { console.warn(`[cache] flush failed: ${e.message}`); }
+      }
+      await sleep(1000 + Math.floor(Math.random() * 1500)); // jittered politeness delay
+    }
     await browser.close();
-    process.exit(2);
-  }
-  await probe.close();
-
-  const resolved = [];
-  for (let i = 0; i < todo.length; i++) {
-    const job = todo[i];
-    const r = await resolveOne(context, job);
-    resolved.push(r);
-    const tag = r.applyKind === 'offsite' ? '✓' : r.applyKind === 'easyApply' ? '~' : r.applyKind === 'closed' ? '✗' : '?';
-    console.log(`[${i + 1}/${todo.length}] ${tag} ${r.company} — ${r.title} → ${r.applyKind}${r.applyUrl ? ' ' + r.applyUrl.slice(0, 80) : ''}${r.error ? ' err=' + r.error : ''}`);
-    await sleep(1000 + Math.floor(Math.random() * 1500)); // jittered politeness delay
   }
 
+  // Final cache flush (covers tail rows since last periodic flush, plus the
+  // todo.length === 0 case where we still want the file to exist).
+  if (!NO_CACHE) {
+    try { saveCache(cache); } catch (e) { console.warn(`[cache] final flush failed: ${e.message}`); }
+  }
+
+  const resolved = [...cachedResults, ...fresh];
   const out = {
     resolvedAt: new Date().toISOString(),
     inputCount: input.jobs.length,
     skippedAsEvaluated: skipped,
+    cacheHits: cachedResults.length,
     resolved,
     summary: {
       offsite: resolved.filter((r) => r.applyKind === 'offsite').length,
@@ -229,7 +317,6 @@ async function resolveOne(context, job) {
   console.log(`\n[resolve] summary:`, out.summary);
   console.log(`[resolve] wrote → ${OUTPUT_FILE}`);
   console.log(`[resolve] next: review the file, then I'll append offsite URLs to data/pipeline.md after your OK`);
-  await browser.close();
 })().catch((e) => {
   console.error('[fatal]', e);
   process.exit(1);
