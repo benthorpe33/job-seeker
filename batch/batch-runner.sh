@@ -186,10 +186,11 @@ acquire_state_lock() {
       return 1
     fi
 
-    if [[ ! -d "$STATE_LOCK_DIR" ]]; then
-      echo "ERROR: Failed to create state lock directory $STATE_LOCK_DIR"
-      return 1
-    fi
+    # Don't bail on a transient mkdir failure where the dir doesn't exist
+    # afterward — on Windows/MSYS this fires when a peer briefly held+released
+    # the lock between our mkdir attempt and this check, or for filesystem
+    # hiccups. Fall through to the wait loop; the timeout bounded by
+    # STATE_LOCK_TIMEOUT_SECONDS is the real fail-safe.
 
     if [[ -f "$STATE_LOCK_PID_FILE" ]]; then
       local lock_pid
@@ -435,6 +436,55 @@ report_file_exists() {
   return 1
 }
 
+# js-vfb: Worker hallucination guard. The triage worker (Haiku 4.5 reliably,
+# Opus 4.5 occasionally — observed 2026-05-04) sometimes writes a "completed"
+# report whose body claims the JD was unavailable, then assigns a fabricated
+# low score against no data. Symptom: report contains phrases like "JD content
+# unavailable" / "JD fetch returned only title" while /tmp/batch-jd-{id}.txt
+# is sitting on disk at full size. Catch and fail-with-retry rather than
+# accept the bogus score.
+#
+# Threshold: only fires if the prefetched JD file is ≥1000 chars (some genuine
+# postings have very short bodies; we don't want to false-fail on those).
+report_claims_jd_missing() {
+  local report_num="$1"
+  local jd_file="$2"
+
+  # JD must actually be substantial — short JDs can legitimately produce
+  # "incomplete data" complaints.
+  [[ -f "$jd_file" ]] || return 1
+  local jd_size
+  jd_size=$(wc -c < "$jd_file" 2>/dev/null || echo 0)
+  (( jd_size >= 1000 )) || return 1
+
+  local f
+  for f in "$REPORTS_DIR/${report_num}-"*.md; do
+    [[ -f "$f" ]] || continue
+    # Two-step match:
+    #   1. sed-strip "..."-quoted spans so meta-commentary that quotes a prior
+    #      hallucination doesn't false-positive (e.g. a re-eval report saying
+    #      `worker hallucinated "JD content unavailable" but ...`).
+    #   2. Require ≥2 hits across the stripped body. A real hallucination
+    #      repeats the complaint across Block A summary, Block B gaps, and
+    #      the "Why skip" rationale. A legit report mentions JD-availability
+    #      in passing at most once (Block G legitimacy note).
+    # grep -c always prints the count, but exits non-zero on zero matches.
+    # `|| echo 0` would append a second "0" line — producing hits="0\n0" which
+    # `(( ... ))` cannot evaluate. Use `|| true` to swallow the exit code, then
+    # strip any newlines and default to 0.
+    local hits
+    hits=$(sed 's/"[^"]*"//g' "$f" 2>/dev/null \
+      | grep -ciE 'jd (content|fetch|page|file)[^.]{0,40}(unavailable|missing|not accessible|not available|incomplete|returned only)|incomplete jd fetch|jd fetch (was )?(incomplete|limited)|jd content not accessible|cannot map requirements|unable to fetch (full|the) job description|cannot evaluate without (the )?(full )?job (posting|description) content|only (company )?(name and )?title (available|visible)' \
+      || true)
+    hits="${hits//$'\n'/}"
+    hits="${hits:-0}"
+    if (( hits >= 2 )); then
+      return 0  # hallucination detected
+    fi
+  done
+  return 1
+}
+
 # Process a single offer — two sequential claude -p calls (triage, then full if score ≥ threshold).
 process_offer() {
   local id="$1" url="$2" source="$3" notes="$4"
@@ -443,6 +493,14 @@ process_offer() {
   started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local retries
   retries=$(get_retries "$id")
+  # js-je6: capture prev_error BEFORE reserve_report_num overwrites the state
+  # row's error column with "-". The auto-upgrade-on-retry check below relies
+  # on the previous attempt's error pattern; reading after reserve_report_num
+  # would always see "-" and never fire the upgrade.
+  local prev_error=""
+  if (( retries > 0 )); then
+    prev_error=$(get_last_error "$id")
+  fi
   local report_num
   report_num=$(reserve_report_num "$id" "$url" "$started_at" "$retries")
   local date
@@ -549,13 +607,20 @@ process_offer() {
   # Write). Scoping the upgrade to this specific error pattern avoids paying
   # the Sonnet/Opus premium on unrelated retry causes (network errors, etc.).
   local effective_triage_model="$TRIAGE_MODEL"
-  if (( retries > 0 )); then
-    local prev_error
-    prev_error=$(get_last_error "$id")
-    if [[ "$prev_error" == *"phase-1 fragment missing or empty"* && "$TRIAGE_MODEL" == *haiku* && -n "$FULL_MODEL" ]]; then
-      effective_triage_model="$FULL_MODEL"
-      echo "    ↑ Triage auto-upgraded $TRIAGE_MODEL → $FULL_MODEL (prior fragment-missing failure, js-tt0)"
-    fi
+  # js-tt0 + js-vfb: auto-upgrade Haiku → FULL_MODEL on retry for two
+  # tool-skip patterns: (a) phase-1 fragment never written despite the
+  # worker narrating "Fragment verified", and (b) report body claims JD
+  # missing while the prefetched JD is on disk. Both are Haiku 4.5 tool-use
+  # bugs that flip ~30% of runs on certain archetypes; upgrading the retry
+  # converts most of them.
+  # js-je6: prev_error is captured at the top of process_offer (before
+  # reserve_report_num overwrites the state row's error column). Re-fetching
+  # here via get_last_error would always return "-".
+  if (( retries > 0 )) \
+     && [[ ( "$prev_error" == *"phase-1 fragment missing or empty"* || "$prev_error" == *"hallucinated JD missing"* ) \
+        && "$TRIAGE_MODEL" == *haiku* && -n "$FULL_MODEL" ]]; then
+    effective_triage_model="$FULL_MODEL"
+    echo "    ↑ Triage auto-upgraded $TRIAGE_MODEL → $FULL_MODEL (prior hallucination/fragment failure, js-tt0+js-vfb)"
   fi
 
   local triage_exit=0
@@ -611,6 +676,18 @@ process_offer() {
       retries=$((retries + 1))
       update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: stub=true exit 0 but report file missing" "$retries"
       echo "    ❌ Triage stub claimed completed but report file missing for $report_num"
+      rm -f "$facts_pack_file" "$phase1_file"
+      return
+    fi
+
+    # js-vfb: stub claims completed, but check the report body — workers
+    # sometimes hallucinate "JD unavailable" while the JD file is on disk,
+    # producing a fabricated low score. Fail-with-retry so the operator
+    # doesn't propagate a bogus stub into applications.md.
+    if report_claims_jd_missing "$report_num" "$jd_file"; then
+      retries=$((retries + 1))
+      update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$triage_score" "triage: hallucinated JD missing (body claims JD unavailable while $jd_file is on disk, js-vfb)" "$retries"
+      echo "    ❌ Triage stub claims JD unavailable, but $jd_file has content — hallucination, retrying"
       rm -f "$facts_pack_file" "$phase1_file"
       return
     fi
@@ -731,6 +808,17 @@ process_offer() {
     retries=$((retries + 1))
     update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$full_score" "full: exit 0 but report file missing" "$retries"
     echo "    ❌ Full pass exit 0 but report file missing for $report_num"
+    return
+  fi
+
+  # js-vfb: full pass body-validity check. Same hallucination pattern as the
+  # triage path: worker self-reports completed but the report body claims the
+  # JD was unavailable. Fail-with-retry rather than accept a bogus refined
+  # score.
+  if report_claims_jd_missing "$report_num" "$jd_file"; then
+    retries=$((retries + 1))
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "$full_score" "full: hallucinated JD missing (body claims JD unavailable while $jd_file is on disk, js-vfb)" "$retries"
+    echo "    ❌ Full pass claims JD unavailable, but $jd_file has content — hallucination, retrying"
     return
   fi
 
