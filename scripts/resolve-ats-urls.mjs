@@ -18,6 +18,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { normalizeUrl, loadEvaluatedUrls } from './lib/reports-urls.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const AUTH_FILE = resolve(REPO_ROOT, 'data', '.linkedin-auth.json');
@@ -251,6 +253,25 @@ async function resolveOne(context, job) {
   }
   console.log(`[resolve] cache: ${cachedResults.length} hits, ${uncached.length} to resolve (TTL=${CACHE_TTL_DAYS}d${NO_CACHE ? ', --no-cache' : ''})`);
 
+  // Hoist the URL-vs-reports/ dedup that filter-batch-input.mjs does at Stage
+  // 5: any cached offsite URL already in a report is dropped here so we never
+  // surface it to append-to-pipeline.mjs (which would re-add it to the
+  // pipeline inbox). Stage 5 stays as a backstop for first-run / non-cached
+  // jobs whose ATS URL we only learn from this run's Playwright resolves.
+  const evaluatedReportUrls = loadEvaluatedUrls();
+  const cachedFresh = [];
+  let alreadyReportedCount = 0;
+  for (const r of cachedResults) {
+    if (r.applyKind === 'offsite' && r.applyUrl && evaluatedReportUrls.has(normalizeUrl(r.applyUrl))) {
+      alreadyReportedCount += 1;
+      continue;
+    }
+    cachedFresh.push(r);
+  }
+  if (alreadyReportedCount > 0) {
+    console.log(`[resolve] ${alreadyReportedCount} cached jobs already in reports/, skipping`);
+  }
+
   const todo = LIMIT ? uncached.slice(0, LIMIT) : uncached;
   console.log(`[resolve] resolving ${todo.length} jobs${LIMIT ? ` (--limit=${LIMIT})` : ''}`);
 
@@ -299,12 +320,13 @@ async function resolveOne(context, job) {
     try { saveCache(cache); } catch (e) { console.warn(`[cache] final flush failed: ${e.message}`); }
   }
 
-  const resolved = [...cachedResults, ...fresh];
+  const resolved = [...cachedFresh, ...fresh];
   const out = {
     resolvedAt: new Date().toISOString(),
     inputCount: input.jobs.length,
     skippedAsEvaluated: skipped,
     cacheHits: cachedResults.length,
+    alreadyReported: alreadyReportedCount,
     resolved,
     summary: {
       offsite: resolved.filter((r) => r.applyKind === 'offsite').length,

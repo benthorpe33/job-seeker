@@ -25,9 +25,7 @@
 
 import {
   readFileSync,
-  readdirSync,
   writeFileSync,
-  statSync,
   existsSync,
   renameSync,
   unlinkSync,
@@ -35,9 +33,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { normalizeUrl, loadEvaluatedUrls } from "./lib/reports-urls.mjs";
+
 const INPUT_PATH = "batch/batch-input.tsv";
 const STATE_PATH = "batch/batch-state.tsv";
-const REPORTS_DIR = "reports";
 const TMP = tmpdir();
 
 const STATE_HEADER =
@@ -54,49 +53,6 @@ const REMOTE_US_RE =
 // suffix drops to explicit foreign markers; otherwise defer to the evaluator.
 const FOREIGN_LOC_RE =
   /\b(paris|london|berlin|munich|zurich|warsaw|amsterdam|rotterdam|dublin|barcelona|madrid|lisbon|porto|stockholm|oslo|copenhagen|helsinki|tokyo|seoul|singapore|sydney|melbourne|auckland|toronto|montreal|vancouver|sao\s*paulo|brazil|brasilia|rio|mexico|bogota|buenos aires|santiago|tel[\s-]*aviv|dubai|riyadh|cairo|lagos|johannesburg|nairobi|bangalore|hyderabad|mumbai|delhi|chennai|pune|jakarta|manila|bangkok|hanoi|kuala lumpur|hong kong|taipei|emea|apac|mena|latam|anz|europe|asia|africa|south america|latin america|middle east|morocco|france|germany|spain|italy|portugal|netherlands|belgium|switzerland|austria|sweden|norway|denmark|finland|poland|romania|czech|hungary|greece|turkey|israel|ireland|japan|china|india|korea|vietnam|thailand|malaysia|indonesia|philippines|australia|new zealand)\b/i;
-
-function normalizeUrl(u) {
-  if (typeof u !== "string") return "";
-  const trimmed = u.trim();
-  if (!trimmed) return "";
-  try {
-    const url = new URL(trimmed);
-    const host = url.host.toLowerCase();
-    const path = url.pathname.replace(/\/+$/, "");
-    return `${url.protocol}//${host}${path}`;
-  } catch {
-    return trimmed.toLowerCase();
-  }
-}
-
-function loadEvaluatedUrls() {
-  const set = new Set();
-  let entries;
-  try {
-    entries = readdirSync(REPORTS_DIR);
-  } catch {
-    return set; // no reports yet
-  }
-  for (const name of entries) {
-    if (!name.endsWith(".md")) continue;
-    const path = join(REPORTS_DIR, name);
-    let st;
-    try {
-      st = statSync(path);
-    } catch {
-      continue;
-    }
-    if (!st.isFile()) continue;
-    const text = readFileSync(path, "utf-8");
-    // Only scan the first ~30 lines — header is always near the top.
-    const head = text.split(/\r?\n/, 30).join("\n");
-    const m = head.match(/^\*\*URL:\*\*\s+(\S.*?)\s*$/m);
-    if (!m) continue;
-    const norm = normalizeUrl(m[1]);
-    if (norm) set.add(norm);
-  }
-  return set;
-}
 
 // notes column shape (from linkedin-build-batch-input.mjs / append-to-pipeline.mjs):
 //   "Company | Role | Location"  (Location optional)
