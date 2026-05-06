@@ -1,24 +1,13 @@
 #!/usr/bin/env node
-// Build batch/batch-input.tsv from data/pipeline.md lines after the
-// pre-existing first 4 entries (Anthropic FDE, Cresta SFS, Figma DS PhD,
-// Decagon SR SE — already evaluated as reports 051-054).
-//
-// Renumbers the 42 LinkedIn-sourced entries starting from id 1 so the
-// batch-runner state file is fresh.
+// Build batch/batch-input.tsv from data/pipeline.md unchecked rows,
+// renumbering surviving rows starting at id 1 so the batch-runner state file
+// is fresh. Already-evaluated URLs are filtered later by Stage 5
+// (scripts/filter-batch-input.mjs) against reports/*.md headers.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const PIPELINE = 'data/pipeline.md';
 const OUT = 'batch/batch-input.tsv';
-const SKIP_FIRST = 4;
-
-// Pre-existing URLs already evaluated (matched by exact URL substring).
-const ALREADY_EVALUATED = new Set([
-  'https://job-boards.greenhouse.io/anthropic/jobs/4985877008',
-  'https://job-boards.greenhouse.io/cresta/jobs/5026013008',
-  'https://boards.greenhouse.io/figma/jobs/5976930004?gh_jid=5976930004',
-  'https://jobs.ashbyhq.com/decagon/73ef8e9d-a6b3-4817-ab02-893c4ac72bad',
-]);
 
 // Encode spaces in URL path segments (Ashby slugs with spaces).
 function fixUrl(url) {
@@ -41,7 +30,6 @@ for (const raw of lines) {
   const m = raw.match(/^- \[ \] (https?:\/\/.+?)\s+\|\s*([^|]+)\|\s*(.+)$/);
   if (!m) continue;
   const url = m[1];
-  if (ALREADY_EVALUATED.has(url)) continue;
   const company = m[2].trim();
   const restRaw = m[3].trim();
   // role | location  OR just role (no pipe)
