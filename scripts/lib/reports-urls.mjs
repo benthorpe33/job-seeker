@@ -47,7 +47,12 @@ export function loadEvaluatedUrls(reportsDir = "reports") {
     const text = readFileSync(path, "utf-8");
     // Only scan the first ~30 lines — header is always near the top.
     const head = text.split(/\r?\n/, 30).join("\n");
-    const m = head.match(/^\*\*URL:\*\*\s+(\S.*?)\s*$/m);
+    // Capture only the URL token (first non-whitespace run after `**URL:**`).
+    // Older reports had `**URL:** <url>` alone on a line; newer reports
+    // append ` · **PDF:** ❌ ...` after the URL on the same line. The earlier
+    // greedy `(\S.*?)` captured the whole tail and broke normalizeUrl, which
+    // silently disabled the dedup for the new format.
+    const m = head.match(/^\*\*URL:\*\*\s+(\S+)/m);
     if (!m) continue;
     const norm = normalizeUrl(m[1]);
     if (norm) set.add(norm);
