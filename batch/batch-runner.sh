@@ -923,7 +923,9 @@ main() {
       # only — they never expose a JD page. Pass them to prefetch-jds.mjs so
       # its applyOnlyReason() can write a .skipped marker and the post-prefetch
       # sweep below can short-circuit them out of the worker queue.
-      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com ]]; then
+      # js-f7g: gh_jid= covers company-careers proxies (brex.com/careers/?gh_jid=)
+      # and iframe-embedded boards (current.com/careers/?gh_jid=).
+      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com|gh_jid= ]]; then
         [[ ! -f "/tmp/batch-jd-${p_id}.txt" ]] && prefetch_ids+=("$p_id")
       fi
     done < "$INPUT_FILE"

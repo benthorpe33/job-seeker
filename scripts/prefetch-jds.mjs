@@ -98,6 +98,58 @@ async function fetchAshby(slug, jobId) {
   };
 }
 
+// js-f7g: company careers pages with ?gh_jid={id} are Greenhouse-backed but
+// the board slug rarely matches the bare hostname. First guess from the
+// hostname (www.brex.com → brex); if that 404s, fetch the page and sniff
+// the slug from any embedded Greenhouse iframe / link.
+function guessSlugFromHostname(host) {
+  return host
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/^(careers|jobs|apply)\./, '')
+    .split('.')[0];
+}
+
+async function discoverGhSlugFromHtml(url) {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (career-ops prefetch)' },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Greenhouse renders iframes via boards.greenhouse.io/embed/job_board?for=SLUG
+    // and direct links via {boards,job-boards}.greenhouse.io/SLUG/...
+    const patterns = [
+      // /embed/job_board?for=SLUG and /embed/job_board/js?for=SLUG
+      /(?:boards|job-boards)\.greenhouse\.io\/embed\/job_board(?:\/js)?\?for=([a-z0-9_-]+)/i,
+      /(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io\/([a-z0-9_-]+)/i,
+    ];
+    for (const re of patterns) {
+      const m = html.match(re);
+      if (m && m[1] && m[1] !== 'embed') return m[1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchGreenhouseWithGhJid(pageUrl, jobId) {
+  const u = new URL(pageUrl);
+  const guess = guessSlugFromHostname(u.host);
+  try {
+    return await fetchGreenhouse(guess, jobId);
+  } catch (firstErr) {
+    const sniffed = await discoverGhSlugFromHtml(pageUrl);
+    if (sniffed && sniffed !== guess) {
+      return await fetchGreenhouse(sniffed, jobId);
+    }
+    throw firstErr;
+  }
+}
+
 async function fetchGreenhouse(slug, jobId) {
   const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs/${jobId}?content=true`;
   const res = await fetch(apiUrl, { signal: AbortSignal.timeout(20000) });
@@ -176,9 +228,11 @@ for (const id of targetIds) {
       result = await fetchGreenhouse(m[1], m[2]);
     } else if ((m = url.match(/(?:boards|grnh\.se)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
       result = await fetchGreenhouse(m[1], m[2]);
-    } else if ((m = url.match(/current\.com.*gh_jid=(\d+)/))) {
-      // Try common Greenhouse slug for Current
-      result = await fetchGreenhouse('current', m[1]);
+    } else if ((m = url.match(/[?&]gh_jid=(\d+)/))) {
+      // js-f7g: company careers proxy with gh_jid=. Try hostname-derived
+      // slug first, fall back to sniffing the Greenhouse slug from any
+      // embedded iframe / link in the page HTML.
+      result = await fetchGreenhouseWithGhJid(url, m[1]);
     }
     if (!result) {
       results.skip.push(`${id} unsupported url: ${url.slice(0,80)}`);
