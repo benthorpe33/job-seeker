@@ -523,21 +523,10 @@ process_offer() {
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
-  # js-oe9: reject stale prefetched JDs from prior runs whose URL no longer
-  # matches batch-input.tsv at this id. Without this, a re-keyed id silently
-  # feeds the worker the old company's JD while {{URL}} substitutes the new
-  # URL — producing a report with mismatched company/URL.
-  if [[ -f "$jd_file" ]]; then
-    local jd_url_file="${jd_file%.txt}.url"
-    local prefetched_url=""
-    if [[ -f "$jd_url_file" ]]; then
-      prefetched_url=$(cat "$jd_url_file" 2>/dev/null || true)
-    fi
-    if [[ "$prefetched_url" != "$url" ]]; then
-      echo "    ↻ Discarding stale JD for #$id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $url)"
-      rm -f "$jd_file" "$jd_url_file"
-    fi
-  fi
+  # js-cdv: stale-JD discard moved to a pre-loop sweep in main() before
+  # preemptive prefetch (js-oe9 was the original here). Keeping it here ran
+  # AFTER the skip-if-exists prefetch check, so retry runs deleted stale
+  # JDs instead of refreshing them.
 
   # Build facts pack from cv.md + article-digest.md (shared across both passes)
   local facts_pack_file="$BATCH_DIR/.facts-pack-${id}.md"
@@ -905,6 +894,27 @@ main() {
   # official ATS APIs and writes via os.tmpdir() (which Git Bash's /tmp maps
   # to — see js-6d4 and the test-all.mjs invariant probe).
   if [[ "$DRY_RUN" == "false" ]]; then
+    # js-cdv: sweep stale leftovers BEFORE the skip-if-exists check. Stage-5
+    # renumbering reuses ids across pipeline runs, so /tmp/batch-jd-{id}.txt
+    # from a prior run can sit at the path of an unrelated current row. The
+    # old discard sat inside process_offer() and ran AFTER preemptive prefetch
+    # had decided "file present → skip" — so retry runs deleted stale JDs
+    # instead of refreshing them. Sweeping first turns every stale id into a
+    # missing-file id, which the prefetch loop then naturally re-fetches.
+    while IFS=$'\t' read -r p_id p_url _; do
+      [[ -z "$p_id" || "$p_id" == "id" ]] && continue
+      [[ "$p_id" =~ ^[0-9]+$ ]] || continue
+      local jd_path="/tmp/batch-jd-${p_id}.txt"
+      local jd_url_path="/tmp/batch-jd-${p_id}.url"
+      [[ -f "$jd_path" ]] || continue
+      local prefetched_url=""
+      [[ -f "$jd_url_path" ]] && prefetched_url=$(cat "$jd_url_path" 2>/dev/null || true)
+      if [[ "$prefetched_url" != "$p_url" ]]; then
+        echo "  ↻ Discarding stale JD for #$p_id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $p_url)"
+        rm -f "$jd_path" "$jd_url_path" "/tmp/batch-jd-${p_id}.location.json"
+      fi
+    done < "$INPUT_FILE"
+
     local -a prefetch_ids=()
     while IFS=$'\t' read -r p_id p_url _; do
       [[ -z "$p_id" || "$p_id" == "id" ]] && continue
