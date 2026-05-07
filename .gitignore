@@ -40,6 +40,8 @@ batch/jd-*.txt
 batch/jd-*.json
 batch/*-board.json
 batch/.facts-pack-*.md
+batch/.jds/
+batch/.phase1/
 batch/tracker-additions/**/*.tsv
 !batch/tracker-additions/.gitkeep
 jds/*

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Pre-fetch JDs → {tmpdir}/batch-jd-{id}.txt.
+// Pre-fetch JDs → batch/.jds/{id}.txt.
 // Modes:
 //   - No flags: scan batch-state.tsv for status=='failed' rows (recovery).
 //   - --ids=a,b,c: prefetch the listed ids explicitly (preemptive, used by
@@ -9,17 +9,20 @@
 //   - Greenhouse URLs: hit boards-api.greenhouse.io/v1/boards/{slug}/jobs/{id}.
 //   - Other (Taleo, easyapply, custom) → skip (manual fetch needed).
 //
-// js-6d4: use os.tmpdir() rather than literal '/tmp'. On Windows, Node resolves
-// '/tmp' to C:\tmp while Git Bash maps '/tmp' to %LOCALAPPDATA%\Temp — so a
-// hardcoded '/tmp' here writes to a directory the bash worker (batch-runner.sh)
-// never reads. os.tmpdir() returns %LOCALAPPDATA%\Temp on Windows, which is the
-// same directory bash's '/tmp' mapping points at, so producer and consumer agree.
+// js-7dn: project-relative scratch dir (batch/.jds/) instead of os.tmpdir().
+// js-6d4 fixed the producer-side mapping by routing through os.tmpdir(), but
+// the consumer (claude -p workers) runs as Node — so when the resolved prompt
+// said `Read /tmp/batch-jd-{id}.txt` the worker looked in C:\tmp on Windows
+// and got ENOENT, while the bash runner's `! -s` check on the same /tmp path
+// resolved to %LOCALAPPDATA%\Temp and saw the runner-created empty placeholder.
+// A project-relative path resolves identically under bash and Node and removes
+// the implicit env-var dependency entirely.
 
-import { readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const TMP = tmpdir();
+const JDS_DIR = 'batch/.jds';
+mkdirSync(JDS_DIR, { recursive: true });
 
 const INPUT = readFileSync('batch/batch-input.tsv', 'utf-8').split('\n');
 
@@ -211,7 +214,7 @@ for (const id of targetIds) {
 
   const applyReason = applyOnlyReason(url);
   if (applyReason) {
-    const markerPath = join(TMP, `batch-jd-${id}.skipped`);
+    const markerPath = join(JDS_DIR, `${id}.skipped`);
     writeFileSync(markerPath, applyReason);
     results.applyOnly.push(`${id} → ${markerPath} (${applyReason})`);
     continue;
@@ -239,17 +242,17 @@ for (const id of targetIds) {
       continue;
     }
     const { text, location } = result;
-    const path = join(TMP, `batch-jd-${id}.txt`);
+    const path = join(JDS_DIR, `${id}.txt`);
     writeFileSync(path, text);
     // Sidecar URL marker — batch-runner.sh checks this to detect stale JDs
     // when batch-input.tsv changes the URL for an existing id (js-oe9).
-    writeFileSync(join(TMP, `batch-jd-${id}.url`), url);
+    writeFileSync(join(JDS_DIR, `${id}.url`), url);
     // js-q4s: Sidecar location JSON — filter-batch-input.mjs reads this to
     // drop non-target-location rows using the ATS API as source of truth
     // rather than the LinkedIn-derived notes column (which is empty for
     // Mistral / Cohere / many other postings).
     writeFileSync(
-      join(TMP, `batch-jd-${id}.location.json`),
+      join(JDS_DIR, `${id}.location.json`),
       JSON.stringify(location),
     );
     results.ok.push(`${id} → ${path} (${text.length} chars)`);

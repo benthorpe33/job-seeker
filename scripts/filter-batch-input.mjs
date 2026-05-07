@@ -6,7 +6,7 @@
 //   2. Drop rows whose location is non-NYC and non-US-remote. Source of truth
 //      preference (best → worst):
 //        a. Prefetched ATS location JSON (js-q4s) at
-//           {tmpdir}/batch-jd-{id}.location.json — primary + secondary from
+//           batch/.jds/{id}.location.json — primary + secondary from
 //           Ashby/Greenhouse APIs. Allow if ANY listed location matches NYC
 //           or US-remote (covers SF-primary/NYC-secondary postings).
 //        b. notes column 3rd pipe-segment (`Company | Role | Location`).
@@ -29,15 +29,18 @@ import {
   existsSync,
   renameSync,
   unlinkSync,
+  mkdirSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { normalizeUrl, loadEvaluatedUrls } from "./lib/reports-urls.mjs";
 
 const INPUT_PATH = "batch/batch-input.tsv";
 const STATE_PATH = "batch/batch-state.tsv";
-const TMP = tmpdir();
+// js-7dn: project-relative scratch dir matches batch-runner.sh + prefetch-jds.mjs.
+// See those files for the full rationale (Node vs Git Bash /tmp mapping).
+const JDS_DIR = "batch/.jds";
+mkdirSync(JDS_DIR, { recursive: true });
 
 const STATE_HEADER =
   "id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries";
@@ -78,7 +81,7 @@ function extractRoleSuffix(notes) {
 }
 
 function loadAtsLocation(id) {
-  const path = join(TMP, `batch-jd-${id}.location.json`);
+  const path = join(JDS_DIR, `${id}.location.json`);
   if (!existsSync(path)) return null;
   try {
     const raw = readFileSync(path, "utf-8");
@@ -139,8 +142,8 @@ function decideLocation(id, notes) {
 
 function moveTmp(oldId, newId) {
   for (const ext of ["txt", "url", "location.json"]) {
-    const from = join(TMP, `batch-jd-${oldId}.${ext}`);
-    const to = join(TMP, `batch-jd-${newId}.${ext}`);
+    const from = join(JDS_DIR, `${oldId}.${ext}`);
+    const to = join(JDS_DIR, `${newId}.${ext}`);
     if (!existsSync(from)) continue;
     if (from === to) continue;
     try {
@@ -163,7 +166,7 @@ function moveTmp(oldId, newId) {
 
 function deleteTmp(id) {
   for (const ext of ["txt", "url", "location.json"]) {
-    const path = join(TMP, `batch-jd-${id}.${ext}`);
+    const path = join(JDS_DIR, `${id}.${ext}`);
     if (!existsSync(path)) continue;
     try {
       unlinkSync(path);

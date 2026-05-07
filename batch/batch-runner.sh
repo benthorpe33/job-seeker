@@ -15,6 +15,13 @@ FULL_PROMPT_FILE="$BATCH_DIR/batch-prompt-full.md"
 LOGS_DIR="$BATCH_DIR/logs"
 TRACKER_DIR="$BATCH_DIR/tracker-additions"
 REPORTS_DIR="$PROJECT_DIR/reports"
+# js-7dn: worker-visible scratch dirs live under BATCH_DIR (project-relative).
+# Bash and Node resolve these paths identically — unlike /tmp, which Git Bash
+# maps to %LOCALAPPDATA%\Temp while Node-on-Windows maps to C:\tmp. Workers
+# spawned via `claude -p` run as Node, so a /tmp path embedded in the prompt
+# could not be Read by the worker even when bash had just written the file.
+JDS_DIR="$BATCH_DIR/.jds"
+PHASE1_DIR="$BATCH_DIR/.phase1"
 APPLICATIONS_FILE="$PROJECT_DIR/data/applications.md"
 LOCK_FILE="$BATCH_DIR/batch-runner.pid"
 STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
@@ -161,7 +168,7 @@ check_prerequisites() {
     exit 1
   fi
 
-  mkdir -p "$LOGS_DIR" "$TRACKER_DIR" "$REPORTS_DIR"
+  mkdir -p "$LOGS_DIR" "$TRACKER_DIR" "$REPORTS_DIR" "$JDS_DIR" "$PHASE1_DIR"
 }
 
 # Initialize state file if it doesn't exist
@@ -446,6 +453,9 @@ report_file_exists() {
 #
 # Threshold: only fires if the prefetched JD file is ≥1000 chars (some genuine
 # postings have very short bodies; we don't want to false-fail on those).
+# (Note: the prior comment block referenced /tmp/batch-jd-{id}.txt; that path
+# moved to $JDS_DIR/{id}.txt in js-7dn — same hallucination pattern, just a
+# project-relative scratch dir now.)
 report_claims_jd_missing() {
   local report_num="$1"
   local jd_file="$2"
@@ -505,9 +515,9 @@ process_offer() {
   report_num=$(reserve_report_num "$id" "$url" "$started_at" "$retries")
   local date
   date=$(date +%Y-%m-%d)
-  local jd_file="/tmp/batch-jd-${id}.txt"
+  local jd_file="$JDS_DIR/${id}.txt"
   # js-f5d: phase-1 fragment uses a unique-per-invocation path instead of
-  # /tmp/batch-phase1-${id}.md so that a previous batch run's content for the
+  # $PHASE1_DIR/${id}.md so that a previous batch run's content for the
   # same id (stage-5 renumbering reuses ids across pipeline runs) cannot leak
   # into this run's full pass. Cleanup paths below remove the file.
   # PID + RANDOM avoids collisions between parallel workers; .md suffix is
@@ -515,7 +525,9 @@ process_offer() {
   # Use hyphens (not dots) inside the unique stem so the only `.` in the path
   # is the .md extension — keeps prompt-parser regexes like `([^.]+\.md)`
   # matching the full path.
-  local phase1_file="/tmp/batch-phase1-${id}-${BASHPID:-$$}-${RANDOM}.md"
+  # js-7dn: PHASE1_DIR is project-relative so bash and Node resolve the path
+  # identically — see header comment for the /tmp mapping incident.
+  local phase1_file="$PHASE1_DIR/${id}-${BASHPID:-$$}-${RANDOM}.md"
   rm -f "$phase1_file" 2>/dev/null || true
   # Start empty so the `! -s` check after triage detects worker hallucination
   # (worker claims "wrote phase-1 fragment" but never invoked Write).
@@ -889,13 +901,14 @@ main() {
 
   # js-0zl: preemptively prefetch JDs for ATSes WebFetch can't read. Ashby's
   # React shell and Greenhouse's job-boards subdomain return header-only
-  # content via WebFetch; without a populated /tmp/batch-jd-{id}.txt the
+  # content via WebFetch; without a populated $JDS_DIR/{id}.txt the
   # triage worker self-fails on first encounter. prefetch-jds.mjs hits the
-  # official ATS APIs and writes via os.tmpdir() (which Git Bash's /tmp maps
-  # to — see js-6d4 and the test-all.mjs invariant probe).
+  # official ATS APIs and writes to the project-relative batch/.jds/ dir
+  # (js-7dn — replaces the prior /tmp-via-os.tmpdir() route from js-6d4 that
+  # left worker Reads pointing at C:\tmp on Windows).
   if [[ "$DRY_RUN" == "false" ]]; then
     # js-cdv: sweep stale leftovers BEFORE the skip-if-exists check. Stage-5
-    # renumbering reuses ids across pipeline runs, so /tmp/batch-jd-{id}.txt
+    # renumbering reuses ids across pipeline runs, so $JDS_DIR/{id}.txt
     # from a prior run can sit at the path of an unrelated current row. The
     # old discard sat inside process_offer() and ran AFTER preemptive prefetch
     # had decided "file present → skip" — so retry runs deleted stale JDs
@@ -904,14 +917,14 @@ main() {
     while IFS=$'\t' read -r p_id p_url _; do
       [[ -z "$p_id" || "$p_id" == "id" ]] && continue
       [[ "$p_id" =~ ^[0-9]+$ ]] || continue
-      local jd_path="/tmp/batch-jd-${p_id}.txt"
-      local jd_url_path="/tmp/batch-jd-${p_id}.url"
+      local jd_path="$JDS_DIR/${p_id}.txt"
+      local jd_url_path="$JDS_DIR/${p_id}.url"
       [[ -f "$jd_path" ]] || continue
       local prefetched_url=""
       [[ -f "$jd_url_path" ]] && prefetched_url=$(cat "$jd_url_path" 2>/dev/null || true)
       if [[ "$prefetched_url" != "$p_url" ]]; then
         echo "  ↻ Discarding stale JD for #$p_id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $p_url)"
-        rm -f "$jd_path" "$jd_url_path" "/tmp/batch-jd-${p_id}.location.json"
+        rm -f "$jd_path" "$jd_url_path" "$JDS_DIR/${p_id}.location.json"
       fi
     done < "$INPUT_FILE"
 
@@ -926,7 +939,7 @@ main() {
       # js-f7g: gh_jid= covers company-careers proxies (brex.com/careers/?gh_jid=)
       # and iframe-embedded boards (current.com/careers/?gh_jid=).
       if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com|gh_jid= ]]; then
-        [[ ! -f "/tmp/batch-jd-${p_id}.txt" ]] && prefetch_ids+=("$p_id")
+        [[ ! -f "$JDS_DIR/${p_id}.txt" ]] && prefetch_ids+=("$p_id")
       fi
     done < "$INPUT_FILE"
     if (( ${#prefetch_ids[@]} > 0 )); then
@@ -945,7 +958,7 @@ main() {
     while IFS=$'\t' read -r p_id p_url _; do
       [[ -z "$p_id" || "$p_id" == "id" ]] && continue
       [[ "$p_id" =~ ^[0-9]+$ ]] || continue
-      local marker="/tmp/batch-jd-${p_id}.skipped"
+      local marker="$JDS_DIR/${p_id}.skipped"
       [[ -f "$marker" ]] || continue
       local reason
       reason=$(cat "$marker" 2>/dev/null || echo "application-form-only-url")

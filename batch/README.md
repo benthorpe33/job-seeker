@@ -79,15 +79,15 @@ A PID-based lock file (`batch-runner.pid`) prevents concurrent batch runs. If a 
 - Node.js >= 18, Playwright chromium installed (`npm run doctor` to verify)
 - `batch-input.tsv` with at least one offer
 
-## Windows /tmp gotcha (js-6d4)
+## Worker-visible scratch dirs (js-7dn, supersedes js-6d4)
 
-`batch-runner.sh` reads pre-fetched JDs from `/tmp/batch-jd-{id}.txt`. On Git Bash for Windows, `/tmp` maps to `%LOCALAPPDATA%\Temp` — not to `C:\tmp`. Any Node script that writes JDs for the worker to consume must use `os.tmpdir()` (which also returns `%LOCALAPPDATA%\Temp` on Windows) rather than a literal `/tmp/...` string. A hardcoded `/tmp/...` in Node resolves to `C:\tmp\...` on Windows, so the worker silently falls back to WebFetch and often produces a degraded report (title/company only).
+`batch-runner.sh` reads pre-fetched JDs from `batch/.jds/{id}.txt` and writes phase-1 fragments to `batch/.phase1/{id}-PID-RAND.md`. Both dirs are project-relative on purpose. The earlier fix (js-6d4) routed prefetch through `os.tmpdir()`, but `claude -p` workers run as Node processes, so when the resolved prompt contained `/tmp/batch-jd-{id}.txt` the worker's Read tool resolved it to `C:\tmp` on Windows while bash's `/tmp` mapped to `%LOCALAPPDATA%\Temp`. The runner's `! -s` check on a path bash could see and the worker's Read on a path Node couldn't see disagreed silently — manifesting as "phase-1 fragment missing or empty" failures and, in the worst cases, wrong-company hallucinated reports (the worker fell back to WebFetch on a generic careers landing and invented a different company entirely).
 
-`scripts/prefetch-jds.mjs` uses `os.tmpdir()` — keep it that way. `test-all.mjs` includes a smoke test (`4b. Prefetch tmpdir invariant`) that asserts Node's tmpdir and bash's `/tmp` point at the same directory.
+A project-relative scratch dir resolves identically under both shells with no env-var alignment. `scripts/prefetch-jds.mjs`, `scripts/filter-batch-input.mjs`, and `batch-runner.sh` all share `batch/.jds/`. `test-all.mjs` has a smoke test (`4b. Batch scratch path invariant`) that writes a probe via Node and reads it back via bash to enforce the new contract.
 
 ## Preemptive ATS prefetch (js-0zl)
 
-`batch-runner.sh main()` runs `scripts/prefetch-jds.mjs --ids=...` before any worker spawns. It scans `batch-input.tsv` for Ashby (`jobs.ashbyhq.com`) and Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `grnh.se`) URLs whose `/tmp/batch-jd-{id}.txt` is missing, then fetches them via the official ATS APIs. WebFetch alone returns header-only React shells for these ATSes, which would otherwise force the triage worker to self-fail with `JD retrieval failed`. Lever URLs are skipped — their API exposes full descriptions inline so WebFetch suffices. The new `--ids=a,b,c` flag is additive: running `node scripts/prefetch-jds.mjs` with no flags still scans `batch-state.tsv` for `status=='failed'` rows (the original recovery path).
+`batch-runner.sh main()` runs `scripts/prefetch-jds.mjs --ids=...` before any worker spawns. It scans `batch-input.tsv` for Ashby (`jobs.ashbyhq.com`) and Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `grnh.se`) URLs whose `batch/.jds/{id}.txt` is missing, then fetches them via the official ATS APIs. WebFetch alone returns header-only React shells for these ATSes, which would otherwise force the triage worker to self-fail with `JD retrieval failed`. Lever URLs are skipped — their API exposes full descriptions inline so WebFetch suffices. The new `--ids=a,b,c` flag is additive: running `node scripts/prefetch-jds.mjs` with no flags still scans `batch-state.tsv` for `status=='failed'` rows (the original recovery path).
 
 ## Triage model choice — Write-tool reliability tradeoff (js-ivp)
 

@@ -12,8 +12,7 @@
  */
 
 import { execSync, execFileSync } from 'child_process';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
-import { tmpdir } from 'os';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -137,28 +136,35 @@ if (!QUICK) {
   console.log('\n4. Dashboard build (skipped --quick)');
 }
 
-// ── 4b. PREFETCH TMPDIR INVARIANT (js-6d4) ──────────────────────
-// The bash batch worker reads JD files from '/tmp/batch-jd-{id}.txt' (bash's
-// /tmp). prefetch-jds.mjs (Node) writes them via os.tmpdir(). This test
-// asserts Node's tmpdir and bash's /tmp resolve to the same directory — the
-// invariant the prefetch fix depends on. If it fails on Windows, /tmp likely
-// got resolved by Node to C:\tmp instead of going through Git Bash.
+// ── 4b. BATCH SCRATCH PATH INVARIANT (js-7dn) ───────────────────
+// js-6d4's earlier fix routed prefetch through os.tmpdir() so bash and Node
+// agreed on the producer side. But the consumer — `claude -p` workers — runs
+// as Node and resolves the literal `/tmp/...` from the resolved prompt to
+// C:\tmp on Windows, while bash's /tmp maps to %LOCALAPPDATA%\Temp. So the
+// runner wrote a JD bash could see, the worker Read'd a path Node couldn't
+// find, and offers silently failed with phase-1-fragment-missing or wrong-
+// company hallucinations. js-7dn moves the scratch dirs into the project
+// tree (batch/.jds/ + batch/.phase1/) where bash and Node agree without any
+// env var alignment. This probe writes a file via Node and reads it back via
+// bash to confirm the two views match.
 
-console.log('\n4b. Prefetch tmpdir invariant (js-6d4)');
+console.log('\n4b. Batch scratch path invariant (js-7dn)');
 {
   const stamp = `${process.pid}-${Date.now()}`;
-  const fname = `js-6d4-tmpdir-probe-${stamp}.txt`;
-  const nodePath = join(tmpdir(), fname);
+  const probeDir = join(ROOT, 'batch', '.jds');
+  const fname = `js-7dn-probe-${stamp}.txt`;
+  const nodePath = join(probeDir, fname);
   try {
+    mkdirSync(probeDir, { recursive: true });
     writeFileSync(nodePath, 'probe');
-    const bashSees = run(`test -r /tmp/${fname} && echo ok`);
+    const bashSees = run(`test -r batch/.jds/${fname} && echo ok`);
     if (bashSees === 'ok') {
-      pass('Node os.tmpdir() and bash /tmp resolve to same directory');
+      pass('Node and bash agree on batch/.jds/ scratch path');
     } else {
-      fail(`Bash cannot read ${nodePath} via /tmp/${fname} — prefetch JDs will be invisible to batch-runner.sh`);
+      fail(`Bash cannot read ${nodePath} via batch/.jds/${fname} — workers will fail on JD Read`);
     }
   } catch (e) {
-    warn(`tmpdir probe could not run: ${e.message}`);
+    warn(`scratch path probe could not run: ${e.message}`);
   } finally {
     try { unlinkSync(nodePath); } catch { /* ignore */ }
   }
