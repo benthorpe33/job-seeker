@@ -16,9 +16,24 @@ The candidate's `cv.md` and `article-digest.md` are inlined in the **Facts Pack*
 
 `{{URL}}` posting URL · `{{JD_FILE}}` JD path · `{{REPORT_NUM}}` 3-digit · `{{DATE}}` YYYY-MM-DD · `{{ID}}` batch-input id · `{{TRIAGE_THRESHOLD}}` full/stub gate (default 3.5; 0 disables) · `{{PHASE1_FILE}}` path to write the phase-1 fragment.
 
-## Step 1 — Get the JD
+## Step 1 — Get the JD (MANDATORY tool invocation, js-7dn)
 
-Read `{{JD_FILE}}`. If empty/missing, WebFetch from `{{URL}}` (this is the ONE allowed network call in this pass — only as JD fallback). If both fail, emit failed-JSON in Step 5 and stop.
+**You MUST invoke the Read tool on `{{JD_FILE}}` as your FIRST action.** Narration like "I read the JD" without an actual Read tool invocation does NOT count and is the most common silent failure mode for this worker. The orchestrator inspects worker logs for proof that Read fired.
+
+After Read returns, **echo the first 200 characters of the JD** as plain text to stdout in this exact format:
+
+```
+JD_FIRST_200:{first 200 chars of JD content, single line, no extra quoting}
+```
+
+This echo is the orchestrator's evidence that Read actually executed and returned content. If you skip this echo, the offer will be marked failed regardless of any later output.
+
+**Failure handling:**
+- If Read returns empty content (file exists but is 0 bytes), WebFetch from `{{URL}}` (the ONE allowed network call in this pass — only as JD fallback). After WebFetch, emit `JD_FIRST_200:` from the fetched content.
+- If Read returns an error (file does not exist), WebFetch from `{{URL}}` and echo `JD_FIRST_200:` from that content.
+- If BOTH Read AND WebFetch fail, do NOT invent JD content. Skip directly to Step 5 and emit `"status":"failed"` with `"error":"jd-unavailable: read=<read-error-or-empty> webfetch=<webfetch-error>"`.
+
+Do NOT proceed to Step 2 unless `JD_FIRST_200:` has been echoed.
 
 ## Step 2 — Phase 1 evaluation
 
