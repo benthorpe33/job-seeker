@@ -919,7 +919,11 @@ main() {
     while IFS=$'\t' read -r p_id p_url _; do
       [[ -z "$p_id" || "$p_id" == "id" ]] && continue
       [[ "$p_id" =~ ^[0-9]+$ ]] || continue
-      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se ]]; then
+      # js-9df: easyapply.jobs and hibob.com /apply URLs are application-form-
+      # only — they never expose a JD page. Pass them to prefetch-jds.mjs so
+      # its applyOnlyReason() can write a .skipped marker and the post-prefetch
+      # sweep below can short-circuit them out of the worker queue.
+      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com ]]; then
         [[ ! -f "/tmp/batch-jd-${p_id}.txt" ]] && prefetch_ids+=("$p_id")
       fi
     done < "$INPUT_FILE"
@@ -930,6 +934,25 @@ main() {
       node scripts/prefetch-jds.mjs --ids="$ids_csv" || \
         echo "  (some prefetches failed — continuing; degraded URLs will fall back to WebFetch)"
     fi
+
+    # js-9df: convert .skipped markers (apply-only URLs) into terminal state
+    # rows so the dispatch loop short-circuits them without spawning a worker.
+    # retries=MAX_RETRIES so --retry-failed cannot revive them either.
+    local skip_started
+    skip_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    while IFS=$'\t' read -r p_id p_url _; do
+      [[ -z "$p_id" || "$p_id" == "id" ]] && continue
+      [[ "$p_id" =~ ^[0-9]+$ ]] || continue
+      local marker="/tmp/batch-jd-${p_id}.skipped"
+      [[ -f "$marker" ]] || continue
+      local reason
+      reason=$(cat "$marker" 2>/dev/null || echo "application-form-only-url")
+      local existing_status
+      existing_status=$(get_status "$p_id")
+      [[ "$existing_status" == "skipped" ]] && continue
+      echo "  ⏭️  Skipping #$p_id (apply-only URL): $reason"
+      update_state "$p_id" "$p_url" "skipped" "$skip_started" "$skip_started" "-" "-" "$reason" "$MAX_RETRIES"
+    done < "$INPUT_FILE"
   fi
 
   # Count input offers (skip header, ignore blank lines)
@@ -984,6 +1007,11 @@ main() {
     else
       # Skip completed offers
       if [[ "$status" == "completed" ]]; then
+        continue
+      fi
+      # js-9df: skipped offers are terminal (apply-only URLs marked by the
+      # prefetch sweep, or min-score skips from a prior run) — don't reprocess.
+      if [[ "$status" == "skipped" ]]; then
         continue
       fi
       # Skip failed offers that hit retry limit (unless --retry-failed)

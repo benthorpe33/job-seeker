@@ -129,11 +129,42 @@ async function fetchGreenhouse(slug, jobId) {
   return { text, location: { primary, secondary, source: 'greenhouse' } };
 }
 
-const results = { ok: [], skip: [], fail: [] };
+// js-9df: apply-only URLs (LinkedIn EasyApply shorteners, raw HiBob/Greenhouse
+// /apply pages without /jobs/{id}) never expose a JD anywhere — the page is
+// only the application form. Detect them early so batch-runner.sh can
+// short-circuit without spawning a triage worker.
+function applyOnlyReason(url) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  const host = u.host.toLowerCase();
+  const path = u.pathname;
+  if (host === 'easyapply.jobs' || host.endsWith('.easyapply.jobs')) {
+    return 'easyapply.jobs (LinkedIn EasyApply shortener — no JD page)';
+  }
+  if (host.endsWith('.hibob.com') && /\/apply(\/|$)/i.test(path)) {
+    return 'hibob.com /apply (application form only — no JD page)';
+  }
+  if ((host.endsWith('.greenhouse.io') || host === 'grnh.se') &&
+      /\/apply(\/|$)/i.test(path) && !/\/jobs\/\d+/.test(path)) {
+    return 'greenhouse.io /apply without /jobs/{id} (application form only)';
+  }
+  return null;
+}
+
+const results = { ok: [], skip: [], fail: [], applyOnly: [] };
 
 for (const id of targetIds) {
   const url = urlById.get(id);
   if (!url) { results.skip.push(`${id} no-url`); continue; }
+
+  const applyReason = applyOnlyReason(url);
+  if (applyReason) {
+    const markerPath = join(TMP, `batch-jd-${id}.skipped`);
+    writeFileSync(markerPath, applyReason);
+    results.applyOnly.push(`${id} → ${markerPath} (${applyReason})`);
+    continue;
+  }
+
   try {
     let result = null;
     let m;
@@ -175,5 +206,6 @@ for (const id of targetIds) {
 
 console.log('\n=== Results ===');
 console.log(`OK (${results.ok.length}):`); results.ok.forEach(s => console.log('  ' + s));
+console.log(`APPLY-ONLY (${results.applyOnly.length}):`); results.applyOnly.forEach(s => console.log('  ' + s));
 console.log(`SKIP (${results.skip.length}):`); results.skip.forEach(s => console.log('  ' + s));
 console.log(`FAIL (${results.fail.length}):`); results.fail.forEach(s => console.log('  ' + s));
