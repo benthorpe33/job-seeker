@@ -19,7 +19,14 @@ export function normalizeUrl(u) {
   try {
     const url = new URL(trimmed);
     const host = url.host.toLowerCase();
-    const path = url.pathname.replace(/\/+$/, "");
+    let path = url.pathname.replace(/\/+$/, "");
+    // js-x7v: Ashby exposes the same posting at /{slug}/{uuid} and
+    // /{slug}/{uuid}/application. Strip the apply-form suffix so dedup
+    // catches it when one report's URL is the canonical form and the
+    // other is the apply-form deeplink.
+    if (host.endsWith("ashbyhq.com")) {
+      path = path.replace(/\/application$/, "");
+    }
     return `${url.protocol}//${host}${path}`;
   } catch {
     return trimmed.toLowerCase();
