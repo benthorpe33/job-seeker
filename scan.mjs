@@ -90,12 +90,19 @@ function parseGreenhouse(json, companyName) {
 
 function parseAshby(json, companyName) {
   const jobs = json.jobs || [];
-  return jobs.map(j => ({
-    title: j.title || '',
-    url: j.jobUrl || '',
-    company: companyName,
-    location: j.location || '',
-  }));
+  return jobs.map(j => {
+    const primary = j.location || '';
+    const secondary = (j.secondaryLocations || [])
+      .map(s => s?.location)
+      .filter(Boolean);
+    const location = [primary, ...secondary].filter(Boolean).join(' | ');
+    return {
+      title: j.title || '',
+      url: j.jobUrl || '',
+      company: companyName,
+      location,
+    };
+  });
 }
 
 function parseLever(json, companyName) {
@@ -135,6 +142,34 @@ function buildTitleFilter(titleFilter) {
     const hasPositive = positive.length === 0 || positive.some(k => lower.includes(k));
     const hasNegative = negative.some(k => lower.includes(k));
     return hasPositive && !hasNegative;
+  };
+}
+
+// ── Location filter ─────────────────────────────────────────────────
+//
+// Splits the location string on common multi-location separators, then
+// keeps the role if ANY token matches an allow keyword without also
+// matching a deny keyword. Empty location passes through (unknown).
+
+function buildLocationFilter(locationFilter) {
+  if (!locationFilter) return () => true;
+  const allow = (locationFilter.allow || []).map(k => k.toLowerCase());
+  const deny = (locationFilter.deny || []).map(k => k.toLowerCase());
+  if (allow.length === 0 && deny.length === 0) return () => true;
+
+  return (location) => {
+    if (!location) return true;
+    const lower = location.toLowerCase();
+    const tokens = lower
+      .split(/[|;/]| and | or /)
+      .map(t => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return true;
+    return tokens.some(token => {
+      const isAllowed = allow.length === 0 || allow.some(k => token.includes(k));
+      const isDenied = deny.some(k => token.includes(k));
+      return isAllowed && !isDenied;
+    });
   };
 }
 
@@ -268,6 +303,7 @@ async function main() {
   const config = parseYaml(readFileSync(PORTALS_PATH, 'utf-8'));
   const companies = config.tracked_companies || [];
   const titleFilter = buildTitleFilter(config.title_filter);
+  const locationFilter = buildLocationFilter(config.location_filter);
 
   // 2. Filter to enabled companies with detectable APIs
   const targets = companies
@@ -289,6 +325,7 @@ async function main() {
   const date = new Date().toISOString().slice(0, 10);
   let totalFound = 0;
   let totalFiltered = 0;
+  let totalLocationFiltered = 0;
   let totalDupes = 0;
   const newOffers = [];
   const errors = [];
@@ -303,6 +340,10 @@ async function main() {
       for (const job of jobs) {
         if (!titleFilter(job.title)) {
           totalFiltered++;
+          continue;
+        }
+        if (!locationFilter(job.location)) {
+          totalLocationFiltered++;
           continue;
         }
         if (seenUrls.has(job.url)) {
@@ -339,6 +380,7 @@ async function main() {
   console.log(`Companies scanned:     ${targets.length}`);
   console.log(`Total jobs found:      ${totalFound}`);
   console.log(`Filtered by title:     ${totalFiltered} removed`);
+  console.log(`Filtered by location:  ${totalLocationFiltered} removed`);
   console.log(`Duplicates:            ${totalDupes} skipped`);
   console.log(`New offers added:      ${newOffers.length}`);
 
