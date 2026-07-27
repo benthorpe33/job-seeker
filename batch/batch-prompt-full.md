@@ -14,7 +14,7 @@ The candidate's `cv.md` and `article-digest.md` are inlined in the **Facts Pack*
 
 ## Placeholders
 
-`{{URL}}` posting URL · `{{JD_FILE}}` JD path · `{{REPORT_NUM}}` 3-digit · `{{DATE}}` YYYY-MM-DD · `{{ID}}` batch-input id · `{{PHASE1_FILE}}` Phase 1 fragment path.
+`{{URL}}` posting URL · `{{JD_FILE}}` JD path · `{{REPORT_NUM}}` 3-digit · `{{DATE}}` YYYY-MM-DD · `{{ID}}` batch-input id · `{{PHASE1_FILE}}` Phase 1 fragment path · `{{REPORTS_DIR}}` absolute path to the canonical reports directory.
 
 ## Step 1 — Read inputs
 
@@ -49,7 +49,7 @@ The refined **Global** is the canonical score for this report and the tracker li
 
 ## Step 4 — Assemble the final report
 
-Path: `reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`.
+**Write path (absolute, MANDATORY):** `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. Use this exact prefix — do NOT prepend `batch/`, `./`, or any other directory. The orchestrator checks for the file at `{{REPORTS_DIR}}` and will fail the offer if it's written anywhere else.
 
 Header (one field per line; order exactly as listed):
 - `# Evaluation: {Company} — {Role}`
@@ -101,7 +101,15 @@ Write ONE TSV line to `batch/tracker-additions/{{ID}}.tsv` (no header, 9 tab-sep
 {next_num}\t{{DATE}}\t{company}\t{role}\t{status}\t{refined_score}/5\t❌\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{1-sentence note}
 ```
 
-`next_num` = max+1 from `data/applications.md` last line. `status` = `Evaluated` (default) unless the JD is closed/expired (then `Discarded`). Score is the refined Global. TSV order has status BEFORE score; `applications.md` swaps them — `merge-tracker.mjs` handles it.
+`next_num` = max+1 from `data/applications.md` last line. `status` = `Evaluated` (default) unless the JD is closed/expired (then `Discarded`). Score is the refined Global. TSV order has status BEFORE score; `applications.md` swaps them — `merge-tracker.mjs` handles it. The markdown link inside the TSV stays as the project-relative `reports/...` form — only the **Write** call in Step 4 uses the absolute `{{REPORTS_DIR}}/...` path.
+
+### Step 5.5 — Self-verify the final report was actually written (MANDATORY)
+
+Before emitting the Step 6 JSON, invoke **Read** on `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md` and confirm:
+1. The file exists and is non-empty.
+2. Line 1 starts with `# Evaluation: `.
+
+If either check fails, narration like "Report written" does NOT count — re-invoke **Write** with the absolute path above and re-Read to confirm. Same failure mode as the triage worker's Step 3.5; same recovery.
 
 ## Step 6 — Final stdout JSON
 

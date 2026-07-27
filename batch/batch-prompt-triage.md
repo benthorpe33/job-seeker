@@ -14,7 +14,7 @@ The candidate's `cv.md` and `article-digest.md` are inlined in the **Facts Pack*
 
 ## Placeholders
 
-`{{URL}}` posting URL · `{{JD_FILE}}` JD path · `{{REPORT_NUM}}` 3-digit · `{{DATE}}` YYYY-MM-DD · `{{ID}}` batch-input id · `{{TRIAGE_THRESHOLD}}` full/stub gate (default 3.5; 0 disables) · `{{PHASE1_FILE}}` path to write the phase-1 fragment.
+`{{URL}}` posting URL · `{{JD_FILE}}` JD path · `{{REPORT_NUM}}` 3-digit · `{{DATE}}` YYYY-MM-DD · `{{ID}}` batch-input id · `{{TRIAGE_THRESHOLD}}` full/stub gate (default 3.5; 0 disables) · `{{PHASE1_FILE}}` path to write the phase-1 fragment · `{{REPORTS_DIR}}` absolute path to the canonical reports directory.
 
 ## Step 1 — Get the JD (MANDATORY tool invocation, js-7dn)
 
@@ -106,7 +106,7 @@ Compare **Global** score to `{{TRIAGE_THRESHOLD}}`:
 
 ### Stub report (only when stub=true)
 
-Path: `reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. ≤40 lines, ≤300 words.
+**Write path (absolute, MANDATORY):** `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. Use this exact prefix — do NOT prepend `batch/`, `./`, or any other directory. The orchestrator checks for the file at `{{REPORTS_DIR}}` and will fail the offer if it's written anywhere else. ≤40 lines, ≤300 words.
 
 Header (one field per line):
 - `# Evaluation: {Company} — {Role}`
@@ -129,7 +129,15 @@ Write ONE TSV line to `batch/tracker-additions/{{ID}}.tsv` (no header, 9 tab-sep
 {next_num}\t{{DATE}}\t{company}\t{role}\tSKIP\t{score}/5\t❌\t[{{REPORT_NUM}}](reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md)\t{1-sentence note: below triage threshold}
 ```
 
-`next_num` = max+1 from `data/applications.md` last line. TSV order has status BEFORE score; `applications.md` swaps them — `merge-tracker.mjs` handles it.
+`next_num` = max+1 from `data/applications.md` last line. TSV order has status BEFORE score; `applications.md` swaps them — `merge-tracker.mjs` handles it. The markdown link inside the TSV stays as the project-relative `reports/...` form — only the **Write** call uses the absolute `{{REPORTS_DIR}}/...` path.
+
+### Step 4.5 — Self-verify the stub report was actually written (MANDATORY)
+
+Before emitting the Step 5 JSON, invoke **Read** on `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md` and confirm:
+1. The file exists and is non-empty.
+2. Line 1 starts with `# Evaluation: `.
+
+If either check fails, narration like "Stub report written" does NOT count — re-invoke **Write** with the absolute path above and re-Read to confirm. Same failure mode as Step 3.5; same recovery.
 
 ## Step 5 — Final stdout JSON
 

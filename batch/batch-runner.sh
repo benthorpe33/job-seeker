@@ -28,6 +28,10 @@ STATE_LOCK_DIR="$BATCH_DIR/.batch-state.lock"
 STATE_LOCK_PID_FILE="$STATE_LOCK_DIR/pid"
 STATE_LOCK_TIMEOUT_SECONDS=30
 MAIN_PID="${BASHPID:-$$}"
+# Set true only after we successfully write our own PID into LOCK_FILE. release_lock
+# checks this so the "another batch-runner is running" bail path (which runs in the
+# main shell, where BASHPID==MAIN_PID) cannot delete a peer's lock on its way out.
+LOCK_ACQUIRED=false
 
 # Defaults
 PARALLEL=1
@@ -120,27 +124,92 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Lock file to prevent double execution
+# js-lk2: Lock file to prevent double execution.
+#
+# On Git Bash / MSYS a bare `kill -0 $pid` is NOT a reliable staleness test:
+#   1. Ancestor aliasing — the recorded PID can be the long-lived MSYS *session
+#      shell* (e.g. 40743, PPID 1), which is an ancestor of every command in the
+#      session and therefore always alive. A dead batch-runner that wrote that
+#      PID (sourced/inline, or via $$ fallback) leaves a lock that `kill -0`
+#      reports "running" forever, blocking every later run until manual deletion.
+#   2. PID reuse — the OS recycles the dead runner's PID onto an unrelated live
+#      process, so `kill -0` again false-positives.
+# Both are handled below: a live PID is only treated as a genuine peer when it is
+# (a) NOT one of our own ancestors and (b) its start-time/winpid fingerprint still
+# matches what we recorded. All ps-based checks degrade gracefully (best-effort)
+# on platforms where the columns differ — the kill -0 + ancestor checks still hold.
+
+# PPID of a pid via ps (MSYS column 2). Empty if not found. `|| true` keeps the
+# pipeline exit 0 under `set -euo pipefail` even when ps fails on a dead pid.
+ppid_of() {
+  ps -p "$1" 2>/dev/null | awk -v p="$1" 'NR>1 && $1==p {print $2; exit}' || true
+}
+
+# Stable per-PID identity: "<winpid>:<stime>" on MSYS (ps cols 4 and 7). On other
+# platforms the columns differ but the value is still deterministic per live PID
+# and changes when the PID is reused — which is all the comparison needs.
+lock_fingerprint() {
+  ps -p "$1" 2>/dev/null | awk -v p="$1" 'NR>1 && $1==p {print $4":"$7; exit}' || true
+}
+
+# True if $target is a STRICT ancestor of the current process. A genuine
+# concurrent batch-runner is always a sibling/unrelated process — never an
+# ancestor of a newly-starting one — so an ancestor lock is by definition stale.
+is_ancestor_of_self() {
+  local target="$1" cur="${BASHPID:-$$}" ppid guard=0
+  while (( guard < 64 )); do
+    ppid=$(ppid_of "$cur")
+    [[ -z "$ppid" || "$ppid" == "0" ]] && return 1
+    [[ "$ppid" == "$target" ]] && return 0
+    [[ "$ppid" == "1" ]] && return 1
+    cur="$ppid"
+    ((guard += 1))
+  done
+  return 1
+}
+
 acquire_lock() {
   if [[ -f "$LOCK_FILE" ]]; then
-    local old_pid
-    old_pid=$(cat "$LOCK_FILE")
-    if kill -0 "$old_pid" 2>/dev/null; then
+    local old_pid old_fp cur_fp
+    old_pid=$(sed -n '1p' "$LOCK_FILE" | tr -d '[:space:]')
+    old_fp=$(sed -n '2p' "$LOCK_FILE" 2>/dev/null || true)
+
+    if [[ -z "$old_pid" ]]; then
+      echo "WARN: Empty/garbled lock file. Removing."
+      rm -f "$LOCK_FILE"
+    elif ! kill -0 "$old_pid" 2>/dev/null; then
+      echo "WARN: Stale lock file found (PID $old_pid not running). Removing."
+      rm -f "$LOCK_FILE"
+    elif is_ancestor_of_self "$old_pid"; then
+      # Lock PID is alive only because it's our session/login shell, not a runner.
+      echo "WARN: Lock PID $old_pid is an ancestor of this process (session shell, not a batch-runner). Reclaiming."
+      rm -f "$LOCK_FILE"
+    elif [[ -n "$old_fp" ]] && cur_fp=$(lock_fingerprint "$old_pid") && [[ "$cur_fp" != "$old_fp" ]]; then
+      # Same PID number, different process — the OS reused the dead runner's PID.
+      echo "WARN: Lock PID $old_pid was reused by an unrelated process (fingerprint $old_fp → $cur_fp). Reclaiming."
+      rm -f "$LOCK_FILE"
+    else
       echo "ERROR: Another batch-runner is already running (PID $old_pid)"
       echo "If this is stale, remove $LOCK_FILE"
       exit 1
-    else
-      echo "WARN: Stale lock file found (PID $old_pid not running). Removing."
-      rm -f "$LOCK_FILE"
     fi
   fi
-  echo "$MAIN_PID" > "$LOCK_FILE"
+  # Two-line payload: PID, then the fingerprint used for reuse detection above.
+  printf '%s\n%s\n' "$MAIN_PID" "$(lock_fingerprint "$MAIN_PID")" > "$LOCK_FILE"
+  LOCK_ACQUIRED=true
 }
 
 release_lock() {
-  if [[ "${BASHPID:-$$}" != "$MAIN_PID" ]]; then
-    return
-  fi
+  # Only the main shell that actually acquired the lock may remove it:
+  #  - LOCK_ACQUIRED guards the "already running" bail path from deleting a peer's
+  #    lock (that exit 1 runs here in the main shell with BASHPID==MAIN_PID).
+  #  - BASHPID==MAIN_PID keeps background parallel workers from releasing it.
+  #  - PID re-check avoids deleting a lock a concurrent/later run rewrote.
+  [[ "$LOCK_ACQUIRED" == "true" ]] || return 0
+  [[ "${BASHPID:-$$}" == "$MAIN_PID" ]] || return 0
+  local cur
+  cur=$(sed -n '1p' "$LOCK_FILE" 2>/dev/null | tr -d '[:space:]' || true)
+  [[ "$cur" == "$MAIN_PID" ]] || return 0
   rm -f "$LOCK_FILE"
 }
 
@@ -370,7 +439,7 @@ build_resolved_prompt() {
 
   local pre="${out}.pre"
 
-  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold esc_phase1
+  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold esc_phase1 esc_reports_dir
   esc_url="${url//\\/\\\\}";              esc_url="${esc_url//|/\\|}"
   esc_jd_file="${jd_file//\\/\\\\}";      esc_jd_file="${esc_jd_file//|/\\|}"
   esc_report_num="${report_num//|/\\|}"
@@ -378,6 +447,12 @@ build_resolved_prompt() {
   esc_id="${id//|/\\|}"
   esc_threshold="${threshold//|/\\|}"
   esc_phase1="${phase1_file//\\/\\\\}";   esc_phase1="${esc_phase1//|/\\|}"
+  # Absolute path to the canonical reports directory. Tightens the path
+  # instruction in the prompt so workers can't hallucinate a `batch/` prefix
+  # (Haiku 4.5 observed pattern: prompt says `reports/...`, worker writes
+  # to `batch/reports/...`; see merge-tracker's ensureReportFile() for the
+  # belt-and-suspenders recovery path).
+  esc_reports_dir="${REPORTS_DIR//\\/\\\\}"; esc_reports_dir="${esc_reports_dir//|/\\|}"
 
   sed \
     -e "s|{{URL}}|${esc_url}|g" \
@@ -387,6 +462,7 @@ build_resolved_prompt() {
     -e "s|{{ID}}|${esc_id}|g" \
     -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
     -e "s|{{PHASE1_FILE}}|${esc_phase1}|g" \
+    -e "s|{{REPORTS_DIR}}|${esc_reports_dir}|g" \
     "$template" > "$pre"
 
   # Splice Facts Pack: replace the {{FACTS_PACK_MARKER}} line with the file contents.
@@ -434,11 +510,27 @@ extract_error_from_json() {
 # js-hjz: A worker can exit 0 (and even claim status=completed) without ever
 # writing the report file. Verify the report exists on disk before trusting
 # the worker's self-report. Caller iterates report_num glob.
+#
+# Recovery: Haiku 4.5 occasionally hallucinates a `batch/` prefix on the
+# report path (prompt says `reports/...`, worker writes to `batch/reports/...`).
+# When that happens the orchestrator's strict check used to fail the offer
+# while the TSV — written to the correct path — got merged in stage 8,
+# producing a broken link in applications.md that verify-pipeline flags in
+# stage 9. Sweep $BATCH_DIR/reports/ into $REPORTS_DIR before failing so the
+# offer completes cleanly.
 report_file_exists() {
   local report_num="$1"
   local f
   for f in "$REPORTS_DIR/${report_num}-"*.md; do
     [[ -f "$f" ]] && return 0
+  done
+  for f in "$BATCH_DIR/reports/${report_num}-"*.md; do
+    if [[ -f "$f" ]]; then
+      mv "$f" "$REPORTS_DIR/" 2>/dev/null && {
+        echo "    ↪ Recovered report $(basename "$f") from batch/reports/ → reports/"
+        return 0
+      }
+    fi
   done
   return 1
 }
@@ -742,8 +834,13 @@ process_offer() {
     local phase1_slug
     phase1_slug=$(printf '%s' "$phase1_meta" | sed -nE 's/.*"company_slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | tr '[:upper:]' '[:lower:]')
     # Loose compare: tolerate "ramp" vs "ramp-com" by checking either contains the other.
-    # Empty phase1_slug → skip (don't break on prompt-shape changes).
-    if [[ -n "$phase1_slug" && "$phase1_slug" != *"$url_slug"* && "$url_slug" != *"$phase1_slug"* ]]; then
+    # js-2nz: normalize away punctuation first, otherwise a hyphen the worker adds in the
+    # middle of the name ("scale-ai" vs URL "scaleai") false-fails a perfectly good eval.
+    # Both sides are already lowercased (url_slug via ,, above, phase1_slug via tr).
+    # Empty normalized slug → skip (don't break on prompt-shape changes).
+    local phase1_norm="${phase1_slug//[^a-z0-9]/}"
+    local url_norm="${url_slug//[^a-z0-9]/}"
+    if [[ -n "$phase1_norm" && "$phase1_norm" != *"$url_norm"* && "$url_norm" != *"$phase1_norm"* ]]; then
       local completed_at
       completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       retries=$((retries + 1))

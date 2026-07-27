@@ -113,6 +113,42 @@ function extractReportNum(reportStr) {
   return m ? parseInt(m[1]) : null;
 }
 
+function extractReportPath(reportStr) {
+  const m = reportStr.match(/\]\(([^)]+)\)/);
+  return m ? m[1] : null;
+}
+
+// Integration-boundary check: before merging a TSV row into applications.md,
+// confirm the linked report file actually exists. Workers (Haiku 4.5 in
+// particular) occasionally hallucinate a `batch/` prefix and write the report
+// to batch/reports/<file>.md instead of reports/<file>.md. The orchestrator
+// has its own sweep, but the TSV is written before the orchestrator's check
+// fires, so a misplaced report can still reach merge-tracker. Sweep
+// batch/reports/ here as a second line of defense; if the file is truly
+// nowhere, return { ok: false } so the caller can skip the row rather than
+// inject a broken markdown link into applications.md.
+function ensureReportFile(reportRelPath) {
+  if (!reportRelPath) return { ok: true, path: reportRelPath };
+  const canonical = join(CAREER_OPS, reportRelPath);
+  if (existsSync(canonical)) return { ok: true, path: reportRelPath };
+
+  const fname = basename(reportRelPath);
+  const fallback = join(CAREER_OPS, 'batch', 'reports', fname);
+  if (existsSync(fallback)) {
+    if (DRY_RUN) {
+      console.log(`  ↪ (dry-run) Would recover ${fname} from batch/reports/ → reports/`);
+    } else {
+      const destDir = join(CAREER_OPS, 'reports');
+      mkdirSync(destDir, { recursive: true });
+      renameSync(fallback, join(destDir, fname));
+      console.log(`  ↪ Recovered ${fname} from batch/reports/ → reports/`);
+    }
+    return { ok: true, path: `reports/${fname}` };
+  }
+
+  return { ok: false, path: reportRelPath };
+}
+
 function parseScore(s) {
   const m = s.replace(/\*\*/g, '').match(/([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
@@ -267,6 +303,23 @@ for (const file of tsvFiles) {
   const content = readFileSync(join(ADDITIONS_DIR, file), 'utf-8').trim();
   const addition = parseTsvContent(content, file);
   if (!addition) { skipped++; continue; }
+
+  // Integration-boundary report-link validation. If the linked report file
+  // is missing from `reports/` but exists in `batch/reports/` (the common
+  // worker hallucination pattern), relocate it and rewrite the link.
+  // If it's truly missing, skip the row so we don't merge a broken link.
+  const reportRelPath = extractReportPath(addition.report);
+  if (reportRelPath) {
+    const check = ensureReportFile(reportRelPath);
+    if (!check.ok) {
+      console.warn(`⚠️  Skipping ${file}: linked report not found at ${reportRelPath} (and no fallback in batch/reports/)`);
+      skipped++;
+      continue;
+    }
+    if (check.path !== reportRelPath) {
+      addition.report = addition.report.replace(reportRelPath, check.path);
+    }
+  }
 
   // Check for duplicate by:
   // 1. Exact report number match (authoritative — the report IS the record)
