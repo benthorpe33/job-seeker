@@ -357,6 +357,12 @@ next_report_num_unlocked() {
       local basename
       basename=$(basename "$f")
       local num="${basename%%-*}"
+      # Ignore report files whose name does not start with a numeric prefix.
+      # A malformed name (e.g. "-vercel-2026-09-09.md", written when a torn
+      # state row yielded an empty report number) otherwise aborts the scan
+      # with "10#: invalid integer constant" and every subsequent report is
+      # assigned an EMPTY number — cascading the corruption.
+      [[ "$num" =~ ^[0-9]+$ ]] || continue
       num=$((10#$num)) # Remove leading zeros for arithmetic
       if (( num > max_num )); then
         max_num=$num
@@ -367,6 +373,7 @@ next_report_num_unlocked() {
   if [[ -f "$STATE_FILE" ]]; then
     while IFS=$'\t' read -r _ _ _ _ _ rnum _ _ _; do
       [[ "$rnum" == "report_num" || "$rnum" == "-" || -z "$rnum" ]] && continue
+      [[ "$rnum" =~ ^[0-9]+$ ]] || continue
       local n=$((10#$rnum))
       if (( n > max_num )); then
         max_num=$n
@@ -605,6 +612,15 @@ process_offer() {
   fi
   local report_num
   report_num=$(reserve_report_num "$id" "$url" "$started_at" "$retries")
+  # Refuse to dispatch a worker without a valid report number. Writing a report
+  # named "-{slug}-{date}.md" poisons next_report_num_unlocked() for every later
+  # offer in the run, so fail this row loudly instead of corrupting the series.
+  if [[ ! "$report_num" =~ ^[0-9]+$ ]]; then
+    local completed_at; completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    update_state "$id" "$url" "failed" "$started_at" "$completed_at" "-" "-" "reserve_report_num returned non-numeric value '${report_num}'" "$retries"
+    echo "    ❌ Could not reserve a report number (got '${report_num}') — skipping offer #$id"
+    return 1
+  fi
   local date
   date=$(date +%Y-%m-%d)
   local jd_file="$JDS_DIR/${id}.txt"
@@ -1043,7 +1059,7 @@ main() {
       local ids_csv
       ids_csv=$(IFS=,; echo "${prefetch_ids[*]}")
       echo "=== Prefetching JDs for ${#prefetch_ids[@]} ATS URLs ==="
-      node scripts/prefetch-jds.mjs --ids="$ids_csv" || \
+      node "$PROJECT_DIR/scripts/prefetch-jds.mjs" --ids="$ids_csv" || \
         echo "  (some prefetches failed — continuing; degraded URLs will fall back to WebFetch)"
     fi
 
