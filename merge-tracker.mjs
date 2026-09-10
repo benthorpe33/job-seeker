@@ -36,6 +36,12 @@ mkdirSync(ADDITIONS_DIR, { recursive: true });
 // Canonical states and aliases
 const CANONICAL_STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Rejected', 'Discarded', 'SKIP'];
 
+// Statuses that record real-world progress the candidate has made. A re-eval
+// must never reset these — an already-Applied row stays Applied. Every other
+// status is purely evaluative and should follow the new score, otherwise a
+// role that jumps 2.8 → 4.5 keeps its stale "SKIP" and drops out of view.
+const PROGRESS_STATES = new Set(['Applied', 'Responded', 'Interview', 'Offer', 'Rejected']);
+
 function validateStatus(status) {
   const clean = status.replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
   const lower = clean.toLowerCase();
@@ -116,6 +122,48 @@ function extractReportNum(reportStr) {
 function extractReportPath(reportStr) {
   const m = reportStr.match(/\]\(([^)]+)\)/);
   return m ? m[1] : null;
+}
+
+// Posting-identity support for the dedup fallback (see the duplicate check
+// below). Every report header carries a `**URL:**` line naming the posting it
+// was written from; two reports with different posting URLs are different reqs
+// no matter how similar their titles read.
+const TRACKING_PARAMS = /^(utm_|gh_src$|src$|source$|ref$|referrer$|lever-source$|trackingTag$)/i;
+
+function normalizePostingUrl(raw) {
+  if (!raw) return null;
+  const cleaned = raw.trim().replace(/[).,;]+$/, '');
+  try {
+    const parsed = new URL(cleaned);
+    // Keep meaningful query params (Ashby/Greenhouse put the posting id there
+    // for company-careers URLs like ?ashby_jid=... or ?gh_jid=...) but drop
+    // campaign/tracking noise so the same posting normalizes identically.
+    const query = [...parsed.searchParams.entries()]
+      .filter(([k]) => !TRACKING_PARAMS.test(k))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('&');
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.hostname.toLowerCase()}${path.toLowerCase()}${query ? `?${query}` : ''}`;
+  } catch {
+    return cleaned.toLowerCase();
+  }
+}
+
+const postingUrlCache = new Map();
+
+function reportPostingUrl(reportRelPath) {
+  if (!reportRelPath) return null;
+  if (postingUrlCache.has(reportRelPath)) return postingUrlCache.get(reportRelPath);
+  let url = null;
+  const abs = join(CAREER_OPS, reportRelPath);
+  if (existsSync(abs)) {
+    const head = readFileSync(abs, 'utf-8').slice(0, 4000);
+    const m = head.match(/\*\*URL:\*\*\s*(\S+)/);
+    if (m) url = normalizePostingUrl(m[1]);
+  }
+  postingUrlCache.set(reportRelPath, url);
+  return url;
 }
 
 // Integration-boundary check: before merging a TSV row into applications.md,
@@ -342,9 +390,30 @@ for (const file of tsvFiles) {
 
   if (!duplicate) {
     const normCompany = normalizeCompany(addition.company);
+    const additionUrl = reportPostingUrl(extractReportPath(addition.report));
     duplicate = existingApps.find(app => {
       if (normalizeCompany(app.company) !== normCompany) return false;
-      return roleFuzzyMatch(addition.role, app.role);
+      if (!roleFuzzyMatch(addition.role, app.role)) return false;
+
+      // Identical role title → the same req reposted under a new URL. Keep
+      // deduping so reposts collapse into one row.
+      //
+      // Compare RAW titles, not normalizeRole() output: normalization strips
+      // seniority words and parentheticals, so "Senior Frontier Agents
+      // Engineer (Applied AI)" and "Frontier Agents Engineer" normalize
+      // identically even though they are separate reqs at separate URLs.
+      const rawTitle = (s) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+      if (rawTitle(addition.role) === rawTitle(app.role)) return true;
+
+      // Inexact fuzzy match — only a shared-token guess. Companies reuse
+      // boilerplate across genuinely different reqs ("Senior Full-Stack
+      // Engineer, North Admin" vs "...North Tools & Retrieval"), and
+      // collapsing those silently drops an evaluated role from the tracker.
+      // If both sides record a posting URL and the URLs differ, treat them as
+      // distinct. When either URL is unknown, fall back to the old behaviour.
+      const appUrl = reportPostingUrl(extractReportPath(app.report));
+      if (additionUrl && appUrl && additionUrl !== appUrl) return false;
+      return true;
     });
   }
 
@@ -356,7 +425,10 @@ for (const file of tsvFiles) {
       console.log(`🔄 Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`);
       const lineIdx = appLines.indexOf(duplicate.raw);
       if (lineIdx >= 0) {
-        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${duplicate.status} | ${duplicate.pdf} | ${addition.report} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
+        const mergedStatus = PROGRESS_STATES.has(duplicate.status)
+          ? duplicate.status
+          : addition.status;
+        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${mergedStatus} | ${duplicate.pdf} | ${addition.report} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
         appLines[lineIdx] = updatedLine;
         updated++;
       }
