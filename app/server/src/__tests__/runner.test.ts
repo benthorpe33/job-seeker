@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
 import { JobRegistry } from "../jobs/registry.js";
-import { cancelJob, spawnJob } from "../jobs/runner.js";
+import { cancelJob, detectBash, spawnJob, withBashUtilsOnPath } from "../jobs/runner.js";
 
 function waitForDone(job: { emitter: import("node:events").EventEmitter }, timeoutMs = 5000): Promise<{ code: number | null; signal: string | null }> {
   return new Promise((resolve, reject) => {
@@ -65,6 +65,37 @@ test("cancelJob terminates a long-running child", async () => {
   const done = await waitForDone(job, 8000);
   assert.equal(job.status, "cancelled");
   assert.ok(done.signal !== null || done.code !== 0);
+});
+
+test("withBashUtilsOnPath leaves non-bash commands untouched", () => {
+  const env = { PATH: "C:\\Windows\\System32" };
+  assert.equal(withBashUtilsOnPath("node", env), env);
+  assert.equal(withBashUtilsOnPath("C:\\Program Files\\nodejs\\node.exe", env), env);
+  // A bare "bash" has no directory to derive the toolchain from.
+  assert.equal(withBashUtilsOnPath("bash", env), env);
+});
+
+test("bash jobs get the Git userland (dirname, sed, ...) on PATH", { skip: process.platform !== "win32" }, async () => {
+  const bash = detectBash();
+  if (!bash) return; // no bash installed on this box; bash kinds are 503 anyway
+
+  const env = withBashUtilsOnPath(bash, process.env);
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  assert.match(String(env[pathKey]), /usr[\\/]bin/i);
+
+  // The real regression: batch-runner.sh line 8 is $(dirname "${BASH_SOURCE[0]}").
+  const registry = new JobRegistry();
+  const job = spawnJob({
+    kind: "batch",
+    cmd: bash,
+    args: ["-c", 'dirname /a/b && sed --version >/dev/null && echo utils-ok'],
+    cwd: process.cwd(),
+    registry,
+  });
+  const done = await waitForDone(job, 15000);
+  assert.equal(done.code, 0);
+  const stdout = job.ring.filter((e) => e.stream === "stdout").map((e) => e.line);
+  assert.deepEqual(stdout, ["/a", "utils-ok"]);
 });
 
 test("ring buffer retains only the last 1000 lines", async () => {

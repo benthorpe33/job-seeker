@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 import type { JobKind } from "@job-seeker/shared";
@@ -24,7 +25,7 @@ export function spawnJob(opts: SpawnOptions): Job {
 
   const child = spawn(opts.cmd, opts.args, {
     cwd: opts.cwd,
-    env: opts.env ?? process.env,
+    env: withBashUtilsOnPath(opts.cmd, opts.env ?? process.env),
     shell: false,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -85,6 +86,68 @@ const WIN_BASH_FALLBACKS = [
   "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
   "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
 ];
+
+const BASH_CMD_RE = /(^|[\\/])bash(\.exe)?$/i;
+
+// Git for Windows ships bash.exe next to (or one level up from) the GNU
+// userland — dirname, sed, awk, tr, the lot. Only an interactive Git Bash
+// session puts those on PATH: when we spawn bash.exe directly the child
+// inherits the plain Windows PATH, where `dirname` does not exist, and every
+// script dies on its first `$(dirname ...)` with exit 127. So for bash kinds
+// we prepend bash's own toolchain dirs. Prepend rather than append on
+// purpose — Windows ships its own incompatible sort.exe/find.exe, and a bash
+// script expects the GNU ones to win, exactly as they would in Git Bash.
+function bashUtilDirs(bashPath: string): string[] {
+  const binDir = dirname(bashPath);
+  // Covers both layouts: Git\usr\bin\bash.exe and Git\bin\bash.exe.
+  const gitRoots = [resolve(binDir, ".."), resolve(binDir, "..", "..")];
+  const candidates = [
+    binDir,
+    ...gitRoots.map((root) => resolve(root, "usr", "bin")),
+    ...gitRoots.map((root) => resolve(root, "mingw64", "bin")),
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((dir) => {
+    const key = dir.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return existsSync(dir);
+  });
+}
+
+export function withBashUtilsOnPath(
+  cmd: string,
+  env: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  if (process.platform !== "win32") return env;
+  if (!BASH_CMD_RE.test(cmd)) return env;
+  // Only an explicit path tells us where the toolchain lives; a bare "bash"
+  // would make dirname() yield "." and poison PATH with the cwd.
+  if (!/[\\/]/.test(cmd)) return env;
+  const dirs = bashUtilDirs(cmd);
+  if (dirs.length === 0) return env;
+
+  // A plain object copy of process.env loses Windows' case-insensitive
+  // lookup, so find whichever spelling of PATH this env actually uses.
+  const pathKey =
+    Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const current = env[pathKey] ?? "";
+  const existing = new Set(
+    current
+      .split(";")
+      .map((p) => p.trim().replace(/[\\/]+$/, "").toLowerCase())
+      .filter((p) => p.length > 0),
+  );
+  const missing = dirs.filter(
+    (dir) => !existing.has(dir.replace(/[\\/]+$/, "").toLowerCase()),
+  );
+  if (missing.length === 0) return env;
+
+  return {
+    ...env,
+    [pathKey]: current ? `${missing.join(";")};${current}` : missing.join(";"),
+  };
+}
 
 export function detectBash(): string | null {
   // Honor an explicit override first — the operator can pin a known-good bash
