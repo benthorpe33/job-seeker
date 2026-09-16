@@ -7,7 +7,7 @@
 //
 // Subsequent runs:
 //   node scripts/linkedin-saved-jobs.mjs
-//   → headless, reuses saved auth, scrolls all saved jobs, writes data/linkedin-saved-jobs.json
+//   → headless, reuses saved auth, pages through all saved jobs, writes data/linkedin-saved-jobs.json
 //
 // If LinkedIn challenges the session (login wall reappears), re-run with --login.
 
@@ -16,11 +16,16 @@ import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseCardLines } from './lib/linkedin-card.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const AUTH_FILE = resolve(REPO_ROOT, 'data', '.linkedin-auth.json');
 const OUTPUT_FILE = resolve(REPO_ROOT, 'data', 'linkedin-saved-jobs.json');
-const SAVED_URL = 'https://www.linkedin.com/my-items/saved-jobs/';
+// my-items/saved-jobs/ now redirects here (2026-09). Pinning stage=saved keeps
+// us off the Applied / In progress / Archive tabs.
+const SAVED_URL = 'https://www.linkedin.com/jobs-tracker/?stage=saved';
+const MAX_PAGES = 50;
 
 const args = new Set(process.argv.slice(2));
 const LOGIN_MODE = args.has('--login');
@@ -85,15 +90,25 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
     process.exit(2);
   }
 
-  console.log(`[scrape] on ${page.url()} — scrolling to load all saved jobs`);
+  console.log(`[scrape] on ${page.url()} — paging through saved jobs`);
 
-  // Scroll-and-collect loop. LinkedIn paginates the saved-jobs view; each page has ~10 cards
-  // and a numbered pager at the bottom. We'll iterate pages explicitly rather than infinite-scroll.
-  const allJobs = new Map(); // jobId -> {jobId, title, company, location, savedAt, listUrl}
+  const hasCards = await page
+    .waitForSelector('a[href*="/jobs/view/"]', { state: 'attached', timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!hasCards) {
+    await browser.close();
+    console.error(`[scrape] no job cards found on ${SAVED_URL} — LinkedIn layout may have changed (or there are no saved jobs)`);
+    process.exit(4);
+  }
+
+  // LinkedIn paginates the saved-jobs view (~10 cards per page) with a numbered
+  // pager. Iterate pages explicitly via the Next button.
+  const allJobs = new Map(); // jobId -> {jobId, listUrl, title, company, location, workplaceType, postedText, cardText}
   let pageNum = 1;
-  let safety = 20; // hard cap
+  let hitPageCap = true;
 
-  while (safety-- > 0) {
+  while (pageNum <= MAX_PAGES) {
     // Let cards render
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await sleep(1200 + Math.floor(Math.random() * 800));
@@ -112,67 +127,116 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
     await sleep(800);
 
     const pageJobs = await page.evaluate(() => {
-      const out = [];
-      // Job cards on the saved-jobs view are anchors to /jobs/view/{id}
-      const anchors = Array.from(document.querySelectorAll('a[href*="/jobs/view/"]'));
-      for (const a of anchors) {
+      // Each card has several anchors to /jobs/view/{id} (logo, title block).
+      // Keep, per jobId, the text lines from the anchor that carries the most.
+      // The jobs-tracker layout renders one <p> per line (title, "Company · Location",
+      // "Posted 2w ago"); card innerText concatenates them without newlines, so
+      // read the <p>s individually and only fall back to innerText lines.
+      const byId = new Map();
+      for (const a of document.querySelectorAll('a[href*="/jobs/view/"]')) {
         const m = a.href.match(/\/jobs\/view\/(\d+)/);
         if (!m) continue;
-        const jobId = m[1];
-        // Climb up to the card container to find sibling text
-        let card = a.closest('li') || a.closest('[data-occludable-job-id]') || a.parentElement;
-        for (let i = 0; i < 4 && card && card.parentElement && !card.querySelector('img'); i++) {
-          card = card.parentElement;
+        let lines = Array.from(a.querySelectorAll('p'))
+          .map((p) => (p.innerText || '').replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+        if (lines.length === 0) {
+          lines = (a.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
         }
-        const text = (card?.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
-        // Heuristic: title is often the anchor's own visible text (or aria-label); company/location follow
-        const title = (a.getAttribute('aria-label') || a.innerText || '').trim();
-        out.push({
-          jobId,
-          listUrl: `https://www.linkedin.com/jobs/view/${jobId}/`,
-          title,
-          cardText: text.slice(0, 8), // keep raw, parse companies/locations downstream
-        });
+        const prev = byId.get(m[1]);
+        if (!prev || lines.length > prev.length) byId.set(m[1], lines);
       }
-      return out;
+      return Array.from(byId, ([jobId, lines]) => ({ jobId, lines: lines.slice(0, 8) }));
     });
 
     let added = 0;
-    for (const j of pageJobs) {
-      if (!allJobs.has(j.jobId)) {
-        allJobs.set(j.jobId, j);
-        added++;
-      }
+    for (const { jobId, lines } of pageJobs) {
+      if (allJobs.has(jobId)) continue;
+      const { title, company, location, workplaceType, postedText } = parseCardLines(lines);
+      allJobs.set(jobId, {
+        jobId,
+        listUrl: `https://www.linkedin.com/jobs/view/${jobId}/`,
+        title,
+        company,
+        location,
+        workplaceType,
+        postedText,
+        cardText: lines,
+      });
+      added++;
     }
-    console.log(`[scrape] page ${pageNum}: found ${pageJobs.length} card refs, ${added} new (total: ${allJobs.size})`);
+    console.log(`[scrape] page ${pageNum}: found ${pageJobs.length} cards, ${added} new (total: ${allJobs.size})`);
 
-    // Try to advance to next page via the artdeco pager (aria-label="Next").
-    const nextBtn = page.locator('button.artdeco-pagination__button--next, button[aria-label="Next"]').first();
-    const nextCount = await nextBtn.count();
-    if (nextCount === 0) {
-      console.log('[scrape] no Next button — done');
+    if (added === 0) {
+      // Only reachable after clicking a visible Next: the pager didn't advance.
+      console.error(`[scrape] WARNING: page ${pageNum} added no new jobs after clicking Next — stopping; later pages may be missing`);
+      pageNum--;
+      hitPageCap = false;
       break;
     }
-    const disabled = await nextBtn.isDisabled().catch(() => true);
-    if (disabled) {
-      console.log('[scrape] Next button disabled — done');
+
+    // Advance via the pager's Next button. On the last page LinkedIn keeps the
+    // button in the DOM but hidden (data-testid="pagination-controls-next-button-hidden").
+    const nextBtn = page
+      .locator('[data-testid^="pagination-controls-next-button"], button.artdeco-pagination__button--next, button[aria-label="Next"]')
+      .first();
+    const nextTestId = (await nextBtn.count()) ? await nextBtn.getAttribute('data-testid').catch(() => null) : null;
+    const usable =
+      (await nextBtn.count()) > 0 &&
+      !(nextTestId || '').endsWith('-hidden') &&
+      (await nextBtn.isVisible().catch(() => false)) &&
+      !(await nextBtn.isDisabled().catch(() => true));
+    if (!usable) {
+      console.log('[scrape] no usable Next button — last page');
+      hitPageCap = false;
       break;
     }
+    const firstId = pageJobs[0].jobId;
     await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
     await nextBtn.click();
     pageNum++;
-    await sleep(1800 + Math.floor(Math.random() * 1200));
+    // Wait for the card list to swap before extracting the next page.
+    await page
+      .waitForFunction(
+        (prevId) => {
+          const a = document.querySelector('a[href*="/jobs/view/"]');
+          return a && !a.href.includes(`/jobs/view/${prevId}`);
+        },
+        firstId,
+        { timeout: 15000 },
+      )
+      .catch(() => {});
+    await sleep(800 + Math.floor(Math.random() * 1200));
   }
 
+  const jobs = Array.from(allJobs.values());
+  const pagesRead = Math.min(pageNum, MAX_PAGES);
   const result = {
     scrapedAt: new Date().toISOString(),
     sourceUrl: SAVED_URL,
-    count: allJobs.size,
-    jobs: Array.from(allJobs.values()),
+    count: jobs.length,
+    pages: pagesRead,
+    jobs,
   };
   writeFileSync(OUTPUT_FILE, JSON.stringify(result, null, 2));
-  console.log(`[scrape] wrote ${result.count} jobs → ${OUTPUT_FILE}`);
+  console.log(`[scrape] wrote ${result.count} jobs from ${pagesRead} page(s) → ${OUTPUT_FILE}`);
   await browser.close();
+
+  if (hitPageCap) {
+    console.error(`[scrape] WARNING: stopped at the ${MAX_PAGES}-page cap — saved jobs beyond that were not read`);
+  }
+  // Downstream stages drop rows without a company or title, so a parse
+  // regression here would silently empty the pipeline. Fail loudly instead.
+  const unparsed = jobs.filter((j) => !j.company || !j.title);
+  if (unparsed.length > 0) {
+    for (const j of unparsed.slice(0, 5)) {
+      console.error(`[scrape]   unparsed card ${j.jobId}: ${JSON.stringify(j.cardText)}`);
+    }
+    if (unparsed.length / jobs.length > 0.2) {
+      console.error(`[scrape] ${unparsed.length}/${jobs.length} cards missing company or title — card layout likely changed; update scripts/lib/linkedin-card.mjs`);
+      process.exit(5);
+    }
+    console.error(`[scrape] WARNING: ${unparsed.length}/${jobs.length} cards missing company or title (listed above); they will be skipped downstream`);
+  }
 }
 
 (async () => {

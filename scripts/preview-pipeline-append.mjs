@@ -17,6 +17,7 @@ import {
   parsePipelineRows,
   looksLikeDuplicate,
 } from './lib/dedup.mjs';
+import { savedJobFields } from './lib/linkedin-card.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
@@ -27,31 +28,11 @@ const OUT = resolve(REPO, 'data', 'linkedin-pipeline-preview.md');
 
 const APPEND_DEDUP_OPTS = { threshold: 2, substringCompany: true };
 
-function cleanCompany(cardText) {
-  // LinkedIn inserts ", Verified" badge text between title and company. The real company
-  // is the first cardText[i] (i >= 1) that isn't a verification badge or location-like.
-  for (let i = 1; i < (cardText || []).length; i++) {
-    const c = cardText[i].trim();
-    if (!c) continue;
-    if (/^,?\s*Verified/i.test(c)) continue;
-    return c;
-  }
-  return cardText?.[1] || '';
-}
-
-function cleanRole(cardText, fallback) {
-  return (cardText?.[0] || fallback || '').replace(/\s+/g, ' ').trim();
-}
-
-function cleanLocation(cardText) {
-  // Find a line that looks like "<City>, <State> (<Mode>)" or "United States (Remote)"
-  for (const c of cardText || []) {
-    if (/\((On-site|Hybrid|Remote)\)/i.test(c)) return c.trim();
-  }
-  return '';
-}
-
 function dupReason(saved, appsRows, pipeRows) {
+  // Same order as append-to-pipeline.mjs: exact URL first, then fuzzy matches.
+  if (pipeRows.some((p) => p.url === saved.applyUrl)) {
+    return `pipeline.md: URL already present`;
+  }
   for (const a of appsRows) {
     if (looksLikeDuplicate(saved, a, APPEND_DEDUP_OPTS)) {
       return `applications.md: ${a.company} — ${a.role}`;
@@ -73,6 +54,10 @@ if (!existsSync(RESOLVED)) {
 const resolved = JSON.parse(readFileSync(RESOLVED, 'utf8'));
 const appsRows = existsSync(APPS) ? parseApplicationsRows(readFileSync(APPS, 'utf8')) : [];
 const pipeRows = existsSync(PIPE) ? parsePipelineRows(readFileSync(PIPE, 'utf8')) : [];
+const SAVED = resolve(REPO, 'data', 'linkedin-saved-jobs.json');
+const savedById = existsSync(SAVED)
+  ? new Map(JSON.parse(readFileSync(SAVED, 'utf8')).jobs.map((j) => [j.jobId, j]))
+  : new Map();
 
 const seenJobIds = new Set();
 const buckets = { propose: [], dup: [], easyApply: [], closed: [], unknown: [], jobIdDup: [] };
@@ -84,23 +69,15 @@ for (const r of resolved.resolved) {
   }
   seenJobIds.add(r.jobId);
 
+  // Names come from the saved-jobs file (the source of truth for card text);
+  // resolved.json's copies are the fallback when the job isn't in it.
+  const fields = savedJobFields(savedById.get(r.jobId));
   const enriched = {
     ...r,
-    company: cleanCompany(r.cardText) || r.company,
-    role: cleanRole(r.cardText, r.title),
-    location: cleanLocation(r.cardText) || r.location,
+    company: fields.company || r.company,
+    role: fields.title || r.title,
+    location: fields.location || r.location,
   };
-  // re-fetch cardText from input json for cleaner names
-  // (resolveOne stripped some context — pull back from input file)
-  if (!enriched.company) {
-    const input = JSON.parse(readFileSync(resolve(REPO, 'data', 'linkedin-saved-jobs.json'), 'utf8'));
-    const src = input.jobs.find((j) => j.jobId === r.jobId);
-    if (src) {
-      enriched.company = cleanCompany(src.cardText);
-      enriched.role = cleanRole(src.cardText, r.title);
-      enriched.location = cleanLocation(src.cardText);
-    }
-  }
 
   if (r.applyKind === 'easyApply') { buckets.easyApply.push(enriched); continue; }
   if (r.applyKind === 'closed') { buckets.closed.push(enriched); continue; }
@@ -110,28 +87,6 @@ for (const r of resolved.resolved) {
   if (dup) buckets.dup.push({ ...enriched, dupReason: dup });
   else buckets.propose.push(enriched);
 }
-
-// Re-parse cardText cleanly from source file (resolved.json doesn't store it)
-const input = JSON.parse(readFileSync(resolve(REPO, 'data', 'linkedin-saved-jobs.json'), 'utf8'));
-const inputById = new Map(input.jobs.map((j) => [j.jobId, j]));
-for (const list of [buckets.propose, buckets.dup, buckets.easyApply, buckets.closed, buckets.unknown]) {
-  for (const item of list) {
-    const src = inputById.get(item.jobId);
-    if (src) {
-      item.company = cleanCompany(src.cardText);
-      item.role = cleanRole(src.cardText, item.title);
-      item.location = cleanLocation(src.cardText);
-    }
-  }
-}
-// Re-run dedup with cleaned company names (some "Verified" entries may now match)
-const finalPropose = [];
-for (const item of buckets.propose) {
-  const dup = dupReason(item, appsRows, pipeRows);
-  if (dup) buckets.dup.push({ ...item, dupReason: dup });
-  else finalPropose.push(item);
-}
-buckets.propose = finalPropose;
 
 // Write preview markdown
 const lines = [];

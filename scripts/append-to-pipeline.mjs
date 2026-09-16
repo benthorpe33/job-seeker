@@ -12,6 +12,7 @@ import {
   parsePipelineRows,
   looksLikeDuplicate,
 } from './lib/dedup.mjs';
+import { savedJobFields } from './lib/linkedin-card.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
@@ -25,23 +26,9 @@ const APPLY = args.has('--yes');
 
 const APPEND_DEDUP_OPTS = { threshold: 2, substringCompany: true };
 
-function cleanCompany(cardText) {
-  for (let i = 1; i < (cardText || []).length; i++) {
-    const c = cardText[i].trim();
-    if (!c || /^,?\s*Verified/i.test(c)) continue;
-    return c;
-  }
-  return cardText?.[1] || '';
-}
-function cleanRole(cardText, fallback) {
-  // Replace | with / so it doesn't collide with the pipeline.md "url | company | role | loc" separator.
-  return (cardText?.[0] || fallback || '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
-}
-function cleanLocation(cardText) {
-  for (const c of cardText || []) {
-    if (/\((On-site|Hybrid|Remote)\)/i.test(c)) return c.trim();
-  }
-  return '';
+// pipeline.md lines are "url | company | role | loc" — keep | out of the fields.
+function pipeField(s) {
+  return (s || '').replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
 }
 
 // --- main ---
@@ -55,22 +42,28 @@ const pipeUrls = new Set(pipeRows.map((r) => r.url));
 
 const seen = new Set();
 const propose = [];
+const dropped = []; // { r, reason }
+let offsiteCount = 0;
 for (const r of resolved.resolved) {
-  if (r.applyKind !== 'offsite' || !r.applyUrl) continue;
+  if (r.applyKind !== 'offsite' || !r.applyUrl) {
+    dropped.push({ r, reason: r.applyKind === 'unknown' || !r.applyKind ? `unresolved (${r.error || 'no error recorded'})` : r.applyKind });
+    continue;
+  }
   if (seen.has(r.jobId)) continue;
   seen.add(r.jobId);
-  const src = savedById.get(r.jobId);
+  offsiteCount++;
+  const fields = savedJobFields(savedById.get(r.jobId));
   const item = {
     jobId: r.jobId,
     applyUrl: r.applyUrl,
-    company: cleanCompany(src?.cardText) || '',
-    role: cleanRole(src?.cardText, r.title),
-    location: cleanLocation(src?.cardText),
+    company: pipeField(fields.company || r.company),
+    role: pipeField(fields.title || r.title),
+    location: pipeField(fields.location || r.location),
   };
-  if (!item.company || !item.role) continue;
-  if (pipeUrls.has(item.applyUrl)) continue;
-  if (appsRows.some((a) => looksLikeDuplicate(item, a, APPEND_DEDUP_OPTS))) continue;
-  if (pipeRows.some((p) => looksLikeDuplicate(item, p, APPEND_DEDUP_OPTS))) continue;
+  if (!item.company || !item.role) { dropped.push({ r, reason: 'missing company or role' }); continue; }
+  if (pipeUrls.has(item.applyUrl)) { dropped.push({ r, reason: 'URL already in pipeline.md' }); continue; }
+  if (appsRows.some((a) => looksLikeDuplicate(item, a, APPEND_DEDUP_OPTS))) { dropped.push({ r, reason: 'duplicate of applications.md row' }); continue; }
+  if (pipeRows.some((p) => looksLikeDuplicate(item, p, APPEND_DEDUP_OPTS))) { dropped.push({ r, reason: 'duplicate of pipeline.md row' }); continue; }
   propose.push(item);
 }
 
@@ -78,6 +71,19 @@ const newLines = propose.map((p) => {
   const loc = p.location ? ` | ${p.location}` : '';
   return `- [ ] ${p.applyUrl} | ${p.company} | ${p.role}${loc}`;
 });
+
+console.log(`[append] ${resolved.resolved.length} resolved rows: ${newLines.length} to add, ${dropped.length} skipped`);
+for (const { r, reason } of dropped) {
+  console.log(`[append]   skip ${r.jobId} ${r.company || '?'} — ${r.title || '?'}: ${reason}`);
+}
+
+// Rows that resolved fine but can't be named mean the saved-jobs card parse
+// broke; don't let that masquerade as "nothing new to add".
+const unnamed = dropped.filter((d) => d.reason === 'missing company or role').length;
+if (offsiteCount > 0 && unnamed === offsiteCount) {
+  console.error(`[append] all ${offsiteCount} resolved offsite jobs lack a company or role — check data/linkedin-saved-jobs.json parsing`);
+  process.exit(7);
+}
 
 console.log(`[append] would add ${newLines.length} lines to ${PIPE}`);
 console.log(`[append] preview of first 3:`);
