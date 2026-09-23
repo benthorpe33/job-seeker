@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 import {
   LinkedinPipeline,
+  STAGE_DEFS_BASE,
+  resumeFromStage,
   type PipelineRunnerOpts,
   type StageCommandFactory,
 } from "../jobs/linkedinPipeline.js";
@@ -235,5 +237,38 @@ test("pipeline resume from stage 1 reruns everything including previously-skippe
     assert.equal(prefetchSecond.jobId, null);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resumeFromStage reports the tail stages, and they are within the route's bound", async () => {
+  const root = mkdtempSync(join(tmpdir(), "js-pipeline-resume-tail-"));
+  const registry = new JobRegistry();
+  try {
+    // Stage 9 (verify-pipeline) is the realistic late failure: a corrupt
+    // tracker row fails it after every expensive stage already succeeded.
+    // The resume route used to cap fromStage at a stale literal 6, so the
+    // Resume button 400'd for exactly these cases.
+    const p = new LinkedinPipeline(buildOpts(registry, root, makeFactory({ 9: "fail" })), true);
+    await p.run(1);
+    const snap = p.snapshot();
+    assert.equal(snap.status, "failed");
+    assert.equal(snap.failedAtStage, 9);
+
+    const from = resumeFromStage(snap);
+    assert.equal(from, 9);
+    assert.ok(from !== null && from >= 1 && from <= STAGE_DEFS_BASE.length);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("every stage number is resumable under the route's bound", () => {
+  // Guards the desync directly: adding a stage without touching the route
+  // bound is what broke resume the first time.
+  for (const def of STAGE_DEFS_BASE) {
+    assert.ok(
+      def.stageNum >= 1 && def.stageNum <= STAGE_DEFS_BASE.length,
+      `stage ${def.stageNum} falls outside 1..${STAGE_DEFS_BASE.length}`,
+    );
   }
 });

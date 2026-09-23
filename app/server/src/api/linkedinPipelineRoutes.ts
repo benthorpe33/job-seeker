@@ -11,8 +11,25 @@ import { REPO_ROOT } from "../env.js";
 import {
   LinkedinPipeline,
   PipelineStore,
+  STAGE_DEFS_BASE,
   resumeFromStage,
 } from "../jobs/linkedinPipeline.js";
+
+// Derived, not hardcoded: this bound was literal `6` from when the pipeline had
+// six stages, and adding resolve-ats-urls + append-to-pipeline renumbered the
+// tail to 9 without updating it — so resume 400'd for any failure at stage 7,
+// 8 or 9, the expensive end where it matters most.
+const MAX_STAGE = STAGE_DEFS_BASE.length;
+
+// Prefetch is the default: stage 6's location filter treats the ATS location
+// JSON stage 5 writes as its best source of truth, and without it the filter
+// falls back to LinkedIn-derived data that's empty for many postings. The UI
+// no longer offers a toggle, so only an explicit `false` opts out.
+// Exported so it can be tested without POSTing to /start — that endpoint
+// spawns the real pipeline (LinkedIn scrape included) against REPO_ROOT.
+export function resolvePrefetchFlag(body?: PipelineStartRequest): boolean {
+  return body?.prefetchJds !== false;
+}
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -40,7 +57,7 @@ export const linkedinPipelinePlugin: FastifyPluginAsync = async (
     Body: PipelineStartRequest;
     Reply: PipelineStartResponse | { error: string };
   }>("/api/jobs/linkedin/start", async (request, reply) => {
-    const prefetchJds = request.body?.prefetchJds === true;
+    const prefetchJds = resolvePrefetchFlag(request.body);
     const pipeline = new LinkedinPipeline(
       {
         registry: app.jobs,
@@ -82,8 +99,10 @@ export const linkedinPipelinePlugin: FastifyPluginAsync = async (
     const requested = request.body?.fromStage;
     const inferred = resumeFromStage(snap);
     const fromStage = requested ?? inferred ?? 1;
-    if (fromStage < 1 || fromStage > 6) {
-      return reply.code(400).send({ error: `fromStage must be 1..6 (got ${fromStage})` });
+    if (!Number.isInteger(fromStage) || fromStage < 1 || fromStage > MAX_STAGE) {
+      return reply
+        .code(400)
+        .send({ error: `fromStage must be 1..${MAX_STAGE} (got ${fromStage})` });
     }
     void pipeline.run(fromStage).catch((err) => {
       app.log.error({ err }, "linkedin pipeline resume crashed");

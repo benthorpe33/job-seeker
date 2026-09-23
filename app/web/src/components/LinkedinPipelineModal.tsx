@@ -32,7 +32,6 @@ function applyStageUpdate(
 
 export function LinkedinPipelineModal({ open, onClose }: Props) {
   const [pipeline, setPipeline] = useState<PipelineRecord | null>(null);
-  const [prefetchJds, setPrefetchJds] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const registerJob = useJobStore((s) => s.registerJob);
@@ -124,14 +123,16 @@ export function LinkedinPipelineModal({ open, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await startLinkedinPipeline({ prefetchJds });
+      // Prefetch is unconditional — stage 6's location filter needs the ATS
+      // location JSON stage 5 writes, so there's no useful reason to skip it.
+      const res = await startLinkedinPipeline({ prefetchJds: true });
       const initial: PipelineRecord = {
         pipelineId: res.pipelineId,
         startedAt: res.startedAt,
         finishedAt: null,
         status: "running",
         failedAtStage: null,
-        prefetchJds,
+        prefetchJds: true,
         stages: res.stages,
       };
       setPipeline(initial);
@@ -177,8 +178,9 @@ export function LinkedinPipelineModal({ open, onClose }: Props) {
             </h2>
             <p className="text-xs text-slate-500">
               Pulls saved jobs → resolves ATS URLs → appends to pipeline.md →
-              builds batch → evaluates → merges → verifies. State is in-memory:
-              a server restart will require restarting from stage 1.
+              builds batch → pre-fetches JDs → filters → evaluates → merges →
+              verifies. State is in-memory: a server restart will require
+              restarting from stage 1.
             </p>
           </div>
           <button
@@ -192,15 +194,6 @@ export function LinkedinPipelineModal({ open, onClose }: Props) {
 
         {!pipeline && (
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={prefetchJds}
-                onChange={(e) => setPrefetchJds(e.target.checked)}
-                className="size-4 rounded border-slate-700 bg-slate-900"
-              />
-              Pre-fetch JDs (Greenhouse/Ashby APIs)
-            </label>
             <button
               type="button"
               onClick={() => void handleStart()}
