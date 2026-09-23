@@ -93,6 +93,13 @@ export function parseTableLines(content: string): {
   return { rows, lines, eol };
 }
 
+// A literal `|` in a cell adds a column and shifts every later field right.
+// Everything that reads applications.md splits rows on a bare `|`, so we
+// substitute rather than escape. Mirrors mdCell() in merge-tracker.mjs.
+export function mdCell(value: string | number): string {
+  return String(value ?? "").replace(/\|/g, "–").replace(/[\r\n]+/g, " ").trim();
+}
+
 export function buildRowLine(row: {
   num: number;
   date: string;
@@ -104,7 +111,7 @@ export function buildRowLine(row: {
   report: string;
   notes: string;
 }): string {
-  return `| ${row.num} | ${row.date} | ${row.company} | ${row.role} | ${row.score} | ${row.status} | ${row.pdf} | ${row.report} | ${row.notes} |`;
+  return `| ${row.num} | ${mdCell(row.date)} | ${mdCell(row.company)} | ${mdCell(row.role)} | ${mdCell(row.score)} | ${mdCell(row.status)} | ${mdCell(row.pdf)} | ${mdCell(row.report)} | ${mdCell(row.notes)} |`;
 }
 
 export function applyMutation(row: ApplicationsMdRow, mut: ApplicationsMdMutation): ApplicationsMdRow {

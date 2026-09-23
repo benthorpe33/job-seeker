@@ -163,3 +163,34 @@ test("CRLF fixture round-trips with CRLF preserved", () => {
     cleanup();
   }
 });
+
+test("buildRowLine neutralizes a literal pipe so the row keeps 9 columns", () => {
+  // Ramp ships titles like "Product Operations Specialist | Travel"; writing
+  // one verbatim shifts score into the status column and breaks every reader.
+  const line = buildRowLine({
+    num: 42,
+    date: "2026-09-23",
+    company: "Ramp",
+    role: "Product Operations Specialist | Travel",
+    score: "1.6/5",
+    status: "SKIP",
+    pdf: "❌",
+    report: "[876](reports/876-ramp-2026-09-23.md)",
+    notes: "ops role | not a builder role",
+  });
+  assert.equal(line.split("|").length - 2, 9);
+  const [row] = parseTableLines(`${HEADER}${line}\n`).rows;
+  assert.ok(row);
+  assert.equal(row.role, "Product Operations Specialist – Travel");
+  assert.equal(row.score, "1.6/5");
+  assert.equal(row.status, "SKIP");
+  assert.equal(row.notes, "ops role – not a builder role");
+});
+
+test("applyMutation with a pipe in notes does not add a column", () => {
+  const [row] = parseTableLines(buildFixture(1)).rows;
+  assert.ok(row);
+  const next = applyMutation(row, { num: row.num, notes: "recruiter said A | B" });
+  assert.equal(next.rawLine.split("|").length - 2, 9);
+  assert.equal(parseTableLines(`${HEADER}${next.rawLine}\n`).rows[0]?.notes, "recruiter said A – B");
+});

@@ -158,6 +158,16 @@ for (const line of lines) {
     error(`Row with <9 columns: ${line.substring(0, 80)}...`);
     badRows++;
   }
+  // A well-formed row is `| c1 | ... | c9 |` → 11 parts (empty head + 9 + empty
+  // tail). More than that means a cell contains a literal `|` (some job titles
+  // do), which shifts every later field one column right. Flag it here so the
+  // failure reads as a column-count problem and not as a bogus "non-canonical
+  // status" further up.
+  if (parts.length > 11) {
+    const num = parts[1]?.trim() ?? '?';
+    error(`#${num}: Row has ${parts.length - 2} columns (expected 9) — a cell contains a literal "|": ${line.substring(0, 80)}...`);
+    badRows++;
+  }
 }
 if (badRows === 0) ok('All rows properly formatted');
 

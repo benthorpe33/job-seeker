@@ -77,6 +77,19 @@ function normalizeCompany(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// A literal `|` inside a cell value (Ramp ships titles like
+// "Product Operations Specialist | Travel") silently adds a column and shifts
+// every field right, so score lands in the status column and so on. Every
+// consumer of applications.md — verify-pipeline, dedup-tracker,
+// normalize-statuses, the Go dashboard, the app server's parser — splits rows
+// on a bare `|`, so escaping as `\|` would need fixing in all of them.
+// Substituting an en dash keeps a single write-side choke point and reads
+// naturally in a title. Newlines get the same treatment: one would split the
+// row in two.
+function mdCell(value) {
+  return String(value ?? '').replace(/\|/g, '–').replace(/[\r\n]+/g, ' ').trim();
+}
+
 // Generic stopwords that don't distinguish roles (present in many JD titles).
 // Filtered out before counting overlap so "Anthropic Applied AI X" vs
 // "Anthropic Applied AI Y" doesn't falsely collapse.
@@ -428,7 +441,7 @@ for (const file of tsvFiles) {
         const mergedStatus = PROGRESS_STATES.has(duplicate.status)
           ? duplicate.status
           : addition.status;
-        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${mergedStatus} | ${duplicate.pdf} | ${addition.report} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
+        const updatedLine = `| ${duplicate.num} | ${mdCell(addition.date)} | ${mdCell(addition.company)} | ${mdCell(addition.role)} | ${mdCell(addition.score)} | ${mdCell(mergedStatus)} | ${mdCell(duplicate.pdf)} | ${mdCell(addition.report)} | ${mdCell(`Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes}`)} |`;
         appLines[lineIdx] = updatedLine;
         updated++;
       }
@@ -441,7 +454,7 @@ for (const file of tsvFiles) {
     // Ignore addition.num (it's a report number, not a tracker sequence).
     const entryNum = ++maxNum;
 
-    const newLine = `| ${entryNum} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${addition.status} | ${addition.pdf} | ${addition.report} | ${addition.notes} |`;
+    const newLine = `| ${entryNum} | ${mdCell(addition.date)} | ${mdCell(addition.company)} | ${mdCell(addition.role)} | ${mdCell(addition.score)} | ${mdCell(addition.status)} | ${mdCell(addition.pdf)} | ${mdCell(addition.report)} | ${mdCell(addition.notes)} |`;
     newLines.push(newLine);
     added++;
     console.log(`➕ Add #${entryNum}: ${addition.company} — ${addition.role} (${addition.score})`);
