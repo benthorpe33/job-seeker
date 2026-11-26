@@ -39,7 +39,9 @@ Do NOT proceed to Step 2 unless `JD_FIRST_200:` has been echoed.
 
 ### Hard filters first
 
-Apply the overlay's **Hard filters** before scoring. If one fires (non-US remote, PhD required, Director+, internship, base < $125K, etc.), set Global = the lowest sensible score (≤1.5), state the filter in "Why skip", and stub it. A ZS-network FLAG is not a skip: score normally and put the flag in the TL;DR.
+Apply the overlay's **Hard filters** before scoring. If one fires (non-US remote, PhD required, Director+, internship, a posted band whose **top** is below $125K, etc.), set Global to a **numeric** score of 1.0, state the filter in "Why skip", and stub it. Global must always be a number (never "SKIP", "-" or blank): the tracker and `verify-pipeline.mjs` reject a non-numeric score. A ZS-network FLAG is not a skip: score normally and put the flag in the TL;DR.
+
+The comp floor is about what the role **can** pay. A band that reaches $125K (e.g. $90K–$175K) does NOT trip the hard filter even when its lower-third landing estimate is below $125K. Score it normally, with Comp = 1.0 for a landing below $125K.
 
 ### Archetype (pick 1; or 2 if hybrid)
 

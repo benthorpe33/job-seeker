@@ -140,12 +140,28 @@ function decideLocation(id, notes) {
   return { allowed: true, source: "empty", detail: "" };
 }
 
+// js-mj0: .skipped markers are id-keyed sidecars too, so they move and
+// delete with the rest.
+const TMP_EXTS = ["txt", "url", "location.json", "skipped"];
+
 function moveTmp(oldId, newId) {
-  for (const ext of ["txt", "url", "location.json"]) {
+  for (const ext of TMP_EXTS) {
     const from = join(JDS_DIR, `${oldId}.${ext}`);
     const to = join(JDS_DIR, `${newId}.${ext}`);
-    if (!existsSync(from)) continue;
     if (from === to) continue;
+    if (!existsSync(from)) {
+      // js-mj0: nothing to carry over, but a file at the destination is from a
+      // previous run's unrelated row. Remove it so it can't be read as this
+      // row's JD, location or skip marker.
+      if (existsSync(to)) {
+        try {
+          unlinkSync(to);
+        } catch {
+          /* ignore */
+        }
+      }
+      continue;
+    }
     try {
       // If a file already sits at the destination from a previous run, drop it
       // first — the destination id may have been a different URL last time.
@@ -165,7 +181,7 @@ function moveTmp(oldId, newId) {
 }
 
 function deleteTmp(id) {
-  for (const ext of ["txt", "url", "location.json"]) {
+  for (const ext of TMP_EXTS) {
     const path = join(JDS_DIR, `${id}.${ext}`);
     if (!existsSync(path)) continue;
     try {

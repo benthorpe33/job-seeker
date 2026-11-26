@@ -18,7 +18,7 @@
 // A project-relative path resolves identically under bash and Node and removes
 // the implicit env-var dependency entirely.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 const JDS_DIR = 'batch/.jds';
@@ -28,9 +28,13 @@ const INPUT = readFileSync('batch/batch-input.tsv', 'utf-8').split('\n');
 
 // Build id → url map
 const urlById = new Map();
+// Company name (first notes segment), used to guess Ashby board slugs for
+// company-hosted ?ashby_jid= pages.
+const companyById = new Map();
 for (const line of INPUT.slice(1)) {
-  const [id, url] = line.split('\t');
+  const [id, url, , notes] = line.split('\t');
   if (id && url) urlById.set(id, url);
+  if (id && notes) companyById.set(id, notes.split('|')[0].trim());
 }
 
 // js-0zl: --ids=a,b,c selects an explicit id list (preemptive prefetch from
@@ -153,6 +157,74 @@ async function fetchGreenhouseWithGhJid(pageUrl, jobId) {
   }
 }
 
+// js-mj0: company careers pages with ?ashby_jid={uuid} (voleon.com/jobs,
+// withdavid.ai/jobs) embed an Ashby board client-side, so neither WebFetch
+// nor HTML sniffing can see the JD or the slug. Try the slugs it's likely to
+// be: the hostname label (voleon.com → voleon), then the company name
+// slugified (David AI → david-ai, davidai).
+function ashbySlugCandidates(host, company) {
+  const out = [guessSlugFromHostname(host)];
+  const c = (company || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+  if (c) {
+    out.push(c.replace(/\s+/g, '-'), c.replace(/\s+/g, ''));
+    const first = c.split(/\s+/)[0];
+    if (first) out.push(first);
+  }
+  return [...new Set(out.filter(Boolean))];
+}
+
+async function fetchAshbyWithJid(pageUrl, jobId, company) {
+  const host = new URL(pageUrl).host;
+  let lastErr = null;
+  for (const slug of ashbySlugCandidates(host, company)) {
+    try {
+      return await fetchAshby(slug, jobId);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error(`Ashby ashby_jid ${jobId}: no slug candidate matched`);
+}
+
+// js-mj0: Lever postings. LinkedIn often links Lever's /apply form, which has
+// no JD text, so WebFetch got only the form (Lirvana Labs, 2026-11-26). The
+// public postings API returns the full posting for both /{id} and /{id}/apply.
+async function fetchLever(slug, postingId) {
+  const apiUrl = `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}/${postingId}`;
+  const res = await fetch(apiUrl, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`Lever ${slug}/${postingId}: HTTP ${res.status}`);
+  const j = await res.json();
+  const cats = j.categories || {};
+  const all = cats.allLocations && cats.allLocations.length ? cats.allLocations : [cats.location].filter(Boolean);
+  const sal = j.salaryRange
+    ? `${j.salaryRange.currency || ''} ${j.salaryRange.min}–${j.salaryRange.max} (${j.salaryRange.interval || ''})`
+    : (j.salaryDescriptionPlain || '').trim() || 'not listed';
+  const lists = (j.lists || [])
+    .map((l) => `${l.text}\n${(l.content || '').replace(/<li>/gi, '- ').replace(/<[^>]+>/g, '\n').replace(/\n{2,}/g, '\n').trim()}`)
+    .join('\n\n');
+  const text = [
+    `Title: ${j.text}`,
+    all.length > 1 ? `Locations: ${all.join(' | ')}` : `Location: ${all[0] || ''}`,
+    `Workplace: ${j.workplaceType || ''}`,
+    `Team: ${cats.team || ''}`,
+    `Employment: ${cats.commitment || ''}`,
+    `Created: ${j.createdAt ? new Date(j.createdAt).toISOString().slice(0, 10) : ''}`,
+    `Compensation: ${sal}`,
+    `URL: ${j.hostedUrl || ''}`,
+    '',
+    '--- Description ---',
+    (j.descriptionPlain || '').trim(),
+    '',
+    lists,
+    '',
+    (j.additionalPlain || '').trim(),
+  ].join('\n');
+  return {
+    text,
+    location: { primary: all[0] || '', secondary: all.slice(1), source: 'lever' },
+  };
+}
+
 async function fetchGreenhouse(slug, jobId) {
   const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs/${jobId}?content=true`;
   const res = await fetch(apiUrl, { signal: AbortSignal.timeout(20000) });
@@ -208,14 +280,45 @@ function applyOnlyReason(url) {
 
 const results = { ok: [], skip: [], fail: [], applyOnly: [] };
 
+// js-mj0: ids are renumbered every pipeline run, so {id}.txt/.url/
+// .location.json/.skipped can belong to an unrelated posting from an earlier
+// run. Seen 2026-11-26: row 3 (Lirvana Labs) still had a Figma PhD JD plus an
+// easyapply .skipped marker, and the location filter read stale
+// .location.json. If an id's sidecar URL doesn't match its current URL (or is
+// missing), drop every sidecar before deciding what to write. An unsupported
+// or failed fetch then leaves nothing behind, instead of stale content.
+function clearStaleSidecars(id, url) {
+  const urlPath = join(JDS_DIR, `${id}.url`);
+  const prev = existsSync(urlPath) ? readFileSync(urlPath, 'utf-8').trim() : null;
+  if (prev === url) {
+    // Same URL, but an older run may have left a .skipped marker under this
+    // id before the .url sidecar was rewritten. Seen 2026-11-26: a May
+    // easyapply marker skipped Revin's Ashby posting. A marker is only valid
+    // for an apply-only URL.
+    const skipPath = join(JDS_DIR, `${id}.skipped`);
+    if (!applyOnlyReason(url) && existsSync(skipPath)) {
+      try { unlinkSync(skipPath); } catch { /* best effort */ }
+    }
+    return;
+  }
+  for (const ext of ['txt', 'url', 'location.json', 'skipped']) {
+    const p = join(JDS_DIR, `${id}.${ext}`);
+    try { if (existsSync(p)) unlinkSync(p); } catch { /* best effort */ }
+  }
+}
+
 for (const id of targetIds) {
   const url = urlById.get(id);
   if (!url) { results.skip.push(`${id} no-url`); continue; }
+
+  clearStaleSidecars(id, url);
 
   const applyReason = applyOnlyReason(url);
   if (applyReason) {
     const markerPath = join(JDS_DIR, `${id}.skipped`);
     writeFileSync(markerPath, applyReason);
+    // Sidecar URL so batch-runner's stale sweep can validate the marker too.
+    writeFileSync(join(JDS_DIR, `${id}.url`), url);
     results.applyOnly.push(`${id} → ${markerPath} (${applyReason})`);
     continue;
   }
@@ -223,19 +326,44 @@ for (const id of targetIds) {
   try {
     let result = null;
     let m;
-    if ((m = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)\/([0-9a-f-]{36})/i))) {
+    // js-mj0: grnh.se is Greenhouse's link shortener. It redirects to the
+    // real posting, often a company page with ?gh_jid= (grnh.se/323698c58us →
+    // actively.ai/careers?gh_jid=4686122008). Match on the resolved URL. The
+    // .url sidecar keeps the original so batch-runner's stale check still
+    // compares like with like.
+    let matchUrl = url;
+    if (/^https?:\/\/grnh\.se\//i.test(url)) {
+      try {
+        const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000), headers: { 'User-Agent': 'Mozilla/5.0 (career-ops prefetch)' } });
+        if (res.url) matchUrl = res.url;
+      } catch { /* fall through with the short URL */ }
+    }
+    if ((m = matchUrl.match(/jobs\.ashbyhq\.com\/([^/?#]+)\/([0-9a-f-]{36})/i))) {
       const slug = m[1];
       const jobId = m[2];
       result = await fetchAshby(slug, jobId);
-    } else if ((m = url.match(/job-boards\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
+    } else if ((m = matchUrl.match(/job-boards\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
       result = await fetchGreenhouse(m[1], m[2]);
-    } else if ((m = url.match(/(?:boards|grnh\.se)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
+    } else if ((m = matchUrl.match(/(?:boards|grnh\.se)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i))) {
       result = await fetchGreenhouse(m[1], m[2]);
-    } else if ((m = url.match(/[?&]gh_jid=(\d+)/))) {
+    } else if ((m = matchUrl.match(/[?&]gh_jid=(\d+)/))) {
       // js-f7g: company careers proxy with gh_jid=. Try hostname-derived
       // slug first, fall back to sniffing the Greenhouse slug from any
       // embedded iframe / link in the page HTML.
-      result = await fetchGreenhouseWithGhJid(url, m[1]);
+      result = await fetchGreenhouseWithGhJid(matchUrl, m[1]);
+    } else if ((m = matchUrl.match(/[?&]ashby_jid=([0-9a-f-]{36})/i))) {
+      result = await fetchAshbyWithJid(matchUrl, m[1], companyById.get(id));
+    } else if ((m = matchUrl.match(/jobs\.lever\.co\/([^/?#]+)\/([0-9a-f-]{36})/i))) {
+      result = await fetchLever(m[1], m[2]);
+    } else if ((m = matchUrl.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#]|$)/i))) {
+      // js-mj0: company-hosted Ashby boards often use the Ashby job UUID as
+      // the path (tryprofound.com/careers/{uuid}). Try the slug guesses; if
+      // none matches, treat the URL as unsupported (WebFetch fallback).
+      try {
+        result = await fetchAshbyWithJid(matchUrl, m[1], companyById.get(id));
+      } catch {
+        result = null;
+      }
     }
     if (!result) {
       results.skip.push(`${id} unsupported url: ${url.slice(0,80)}`);

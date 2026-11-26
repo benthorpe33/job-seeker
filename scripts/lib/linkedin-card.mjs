@@ -20,6 +20,20 @@ function clean(s) {
   return (s || '').replace(/\s+/g, ' ').trim();
 }
 
+// jobs-tracker (2026-11): verified postings render the badge's screen-reader
+// text inline and then repeat the title in the same <p>:
+//   "Data Scientist II (Soccer) (Verified job)Data Scientist II (Soccer)"
+// Keep the text before the badge; fall back to the text after it if the
+// title ever comes only after the badge.
+const INLINE_BADGE_RE = /^(.*?)\s*\((?:Verified job|Verified)\)\s*(.*)$/i;
+
+export function stripInlineBadge(s) {
+  const t = clean(s);
+  const m = t.match(INLINE_BADGE_RE);
+  if (!m) return t;
+  return clean(m[1]) || clean(m[2]);
+}
+
 export function parseCardLines(lines) {
   const ls = (lines || []).map(clean).filter(Boolean);
   const out = { title: '', company: '', location: '', workplaceType: '', postedText: '' };
@@ -45,6 +59,7 @@ export function parseCardLines(lines) {
     out.company = rest.find((l) => l !== out.location) || '';
   }
 
+  out.title = stripInlineBadge(out.title);
   const wp = out.location.match(WORKPLACE_RE);
   out.workplaceType = wp ? wp[1] : '';
   return out;
@@ -57,7 +72,9 @@ export function savedJobFields(job) {
   if (!job) return { title: '', company: '', location: '' };
   const parsed = parseCardLines(job.cardText);
   return {
-    title: clean(job.title && job.company ? job.title : parsed.title || job.title),
+    // Strip here too: saved-jobs.json files scraped before the inline-badge
+    // fix carry the doubled title in job.title.
+    title: stripInlineBadge(job.title && job.company ? job.title : parsed.title || job.title),
     company: clean(job.company || parsed.company),
     location: clean(job.location || parsed.location),
   };

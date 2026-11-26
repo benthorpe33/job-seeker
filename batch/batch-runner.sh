@@ -867,7 +867,32 @@ process_offer() {
     # Empty normalized slug → skip (don't break on prompt-shape changes).
     local phase1_norm="${phase1_slug//[^a-z0-9]/}"
     local url_norm="${url_slug//[^a-z0-9]/}"
-    if [[ -n "$phase1_norm" && "$phase1_norm" != *"$url_norm"* && "$url_norm" != *"$phase1_norm"* ]]; then
+    # js-mj0: ATS slugs are often abbreviations ("seqholdings" for Sequence
+    # Holdings), which false-failed a 4.5 eval on 2026-11-26. Two more ways to
+    # pass, both still catching cross-company contamination:
+    #   (a) the phase-1 slug matches the company named in this row's notes,
+    #       i.e. the worker evaluated the company the input row is about;
+    #   (b) the URL slug is an in-order abbreviation of the phase-1 slug (same
+    #       first char, every URL char appears in order, length ≥ 4).
+    local slug_ok=false
+    if [[ -z "$phase1_norm" || "$phase1_norm" == *"$url_norm"* || "$url_norm" == *"$phase1_norm"* ]]; then
+      slug_ok=true
+    else
+      local notes_company="${notes%%|*}"
+      notes_company="${notes_company,,}"
+      notes_company="${notes_company//[^a-z0-9]/}"
+      if [[ -n "$notes_company" && ( "$notes_company" == *"$phase1_norm"* || "$phase1_norm" == *"$notes_company"* ) ]]; then
+        slug_ok=true
+      elif (( ${#url_norm} >= 4 )) && [[ "${url_norm:0:1}" == "${phase1_norm:0:1}" ]]; then
+        local pi=0 ui=0
+        while (( pi < ${#phase1_norm} && ui < ${#url_norm} )); do
+          [[ "${phase1_norm:pi:1}" == "${url_norm:ui:1}" ]] && ui=$((ui + 1))
+          pi=$((pi + 1))
+        done
+        (( ui == ${#url_norm} )) && slug_ok=true
+      fi
+    fi
+    if [[ "$slug_ok" == false ]]; then
       local completed_at
       completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       retries=$((retries + 1))
@@ -1043,12 +1068,21 @@ main() {
       [[ "$p_id" =~ ^[0-9]+$ ]] || continue
       local jd_path="$JDS_DIR/${p_id}.txt"
       local jd_url_path="$JDS_DIR/${p_id}.url"
-      [[ -f "$jd_path" ]] || continue
+      local jd_skip_path="$JDS_DIR/${p_id}.skipped"
+      # js-mj0: .skipped markers are id-keyed too. Without this check, a stale
+      # easyapply marker from an earlier run silently skipped an unrelated
+      # current row as "apply-only".
+      [[ -f "$jd_path" || -f "$jd_skip_path" ]] || continue
       local prefetched_url=""
       [[ -f "$jd_url_path" ]] && prefetched_url=$(cat "$jd_url_path" 2>/dev/null || true)
       if [[ "$prefetched_url" != "$p_url" ]]; then
-        echo "  ↻ Discarding stale JD for #$p_id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $p_url)"
-        rm -f "$jd_path" "$jd_url_path" "$JDS_DIR/${p_id}.location.json"
+        echo "  ↻ Discarding stale JD/marker for #$p_id (prefetched URL: ${prefetched_url:-<none>} ≠ current: $p_url)"
+        rm -f "$jd_path" "$jd_url_path" "$JDS_DIR/${p_id}.location.json" "$jd_skip_path"
+      elif [[ -f "$jd_path" && -f "$jd_skip_path" ]]; then
+        # A fetched JD proves the URL isn't apply-only, so the marker is a
+        # leftover from an older run under the same id.
+        echo "  ↻ Discarding stale apply-only marker for #$p_id (JD present)"
+        rm -f "$jd_skip_path"
       fi
     done < "$INPUT_FILE"
 
@@ -1062,7 +1096,9 @@ main() {
       # sweep below can short-circuit them out of the worker queue.
       # js-f7g: gh_jid= covers company-careers proxies (brex.com/careers/?gh_jid=)
       # and iframe-embedded boards (current.com/careers/?gh_jid=).
-      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com|gh_jid= ]]; then
+      # js-mj0: + Lever (API-backed; /apply pages carry no JD) and
+      # company-hosted Ashby boards via ?ashby_jid=.
+      if [[ "$p_url" =~ jobs\.ashbyhq\.com|boards\.greenhouse\.io|job-boards(\.eu)?\.greenhouse\.io|grnh\.se|easyapply\.jobs|hibob\.com|gh_jid=|jobs\.lever\.co|ashby_jid= ]]; then
         [[ ! -f "$JDS_DIR/${p_id}.txt" ]] && prefetch_ids+=("$p_id")
       fi
     done < "$INPUT_FILE"

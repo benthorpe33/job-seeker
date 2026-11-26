@@ -108,7 +108,12 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
   let pageNum = 1;
   let hitPageCap = true;
 
-  while (pageNum <= MAX_PAGES) {
+  // Previous page's first job id, used to tell "the pager never advanced"
+  // apart from "the new page hasn't rendered yet" when a page adds nothing.
+  let prevFirstId = null;
+  const MAX_PAGE_RETRIES = 3;
+
+  const extractPage = async () => {
     // Let cards render
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await sleep(1200 + Math.floor(Math.random() * 800));
@@ -126,7 +131,7 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
     });
     await sleep(800);
 
-    const pageJobs = await page.evaluate(() => {
+    return page.evaluate(() => {
       // Each card has several anchors to /jobs/view/{id} (logo, title block).
       // Keep, per jobId, the text lines from the anchor that carries the most.
       // The jobs-tracker layout renders one <p> per line (title, "Company · Location",
@@ -147,6 +152,30 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
       }
       return Array.from(byId, ([jobId, lines]) => ({ jobId, lines: lines.slice(0, 8) }));
     });
+  };
+
+  const nextButton = () =>
+    page
+      .locator('[data-testid^="pagination-controls-next-button"], button.artdeco-pagination__button--next, button[aria-label="Next"]')
+      .first();
+
+  while (pageNum <= MAX_PAGES) {
+    let pageJobs = await extractPage();
+
+    // A page that adds nothing is usually a slow render or a click that didn't
+    // register (seen 2026-11-26: runs stopped at page 2-3 of 6). Retry before
+    // concluding the pager is stuck, so a partial list doesn't overwrite a
+    // complete one.
+    for (let attempt = 1; pageNum > 1 && attempt <= MAX_PAGE_RETRIES; attempt++) {
+      if (pageJobs.some(({ jobId }) => !allJobs.has(jobId))) break;
+      const stuck = pageJobs.length > 0 && pageJobs[0].jobId === prevFirstId;
+      console.error(`[scrape] page ${pageNum}: ${pageJobs.length} cards, none new — retry ${attempt}/${MAX_PAGE_RETRIES}${stuck ? ' (pager did not advance; re-clicking Next)' : ''}`);
+      await sleep(3000 * attempt);
+      if (stuck) {
+        await nextButton().click().catch(() => {});
+      }
+      pageJobs = await extractPage();
+    }
 
     let added = 0;
     for (const { jobId, lines } of pageJobs) {
@@ -176,9 +205,7 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
 
     // Advance via the pager's Next button. On the last page LinkedIn keeps the
     // button in the DOM but hidden (data-testid="pagination-controls-next-button-hidden").
-    const nextBtn = page
-      .locator('[data-testid^="pagination-controls-next-button"], button.artdeco-pagination__button--next, button[aria-label="Next"]')
-      .first();
+    const nextBtn = nextButton();
     const nextTestId = (await nextBtn.count()) ? await nextBtn.getAttribute('data-testid').catch(() => null) : null;
     const usable =
       (await nextBtn.count()) > 0 &&
@@ -191,6 +218,7 @@ async function scrapeSavedJobs(autoLoginAttempts = 0) {
       break;
     }
     const firstId = pageJobs[0].jobId;
+    prevFirstId = firstId;
     await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
     await nextBtn.click();
     pageNum++;
