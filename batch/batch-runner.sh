@@ -680,6 +680,17 @@ process_offer() {
       printf '\n'
     } >> "$facts_pack_file"
   fi
+  # js-mj0: the candidate's scoring overlay (archetype tracks, Rubric v2
+  # weights, hard filters, seniority modifier). Without it, batch workers
+  # scored against the generic upstream archetypes and ignored every
+  # user-layer rule. Optional so a fresh clone without _profile.md still runs.
+  if [[ -f "$PROJECT_DIR/modes/_profile.md" ]]; then
+    {
+      printf '\n---\n\n## modes/_profile.md (candidate scoring overlay — overrides prompt defaults)\n\n'
+      cat "$PROJECT_DIR/modes/_profile.md"
+      printf '\n'
+    } >> "$facts_pack_file"
+  fi
 
   # phase1_file is mktemp'd above (js-f5d) — already unique per invocation, no
   # stale-content risk. The empty-file truncate above stays so the `! -s` check

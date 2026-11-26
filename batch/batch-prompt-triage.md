@@ -4,7 +4,7 @@ You evaluate ONE job offer per invocation, **Phase 1 only**: archetype + Block A
 
 ## Sources of truth
 
-The candidate's `cv.md` and `article-digest.md` are inlined in the **Facts Pack** below. **Do NOT Read them again** — that is wasted tokens. `article-digest.md` is authoritative over `cv.md` when article metrics conflict. Never write to `cv.md` or `i18n.ts`. Never hardcode metrics — read from the Facts Pack. Never fabricate experience or metrics.
+The candidate's `cv.md`, `article-digest.md` and `modes/_profile.md` (scoring overlay) are inlined in the **Facts Pack** below. **Do NOT Read them again** — that is wasted tokens. **When `modes/_profile.md` is present, its archetypes, hard filters, seniority modifier and "Scoring rubric v2" override every default in this prompt.** `article-digest.md` is authoritative over `cv.md` when article metrics conflict. Never write to `cv.md` or `i18n.ts`. Never hardcode metrics — read from the Facts Pack. Never fabricate experience or metrics.
 
 ## Facts Pack
 
@@ -37,7 +37,13 @@ Do NOT proceed to Step 2 unless `JD_FIRST_200:` has been echoed.
 
 ## Step 2 — Phase 1 evaluation
 
+### Hard filters first
+
+Apply the overlay's **Hard filters** before scoring. If one fires (non-US remote, PhD required, Director+, internship, base < $125K, etc.), set Global = the lowest sensible score (≤1.5), state the filter in "Why skip", and stub it. A ZS-network FLAG is not a skip: score normally and put the flag in the TL;DR.
+
 ### Archetype (pick 1; or 2 if hybrid)
+
+Use the archetype/track table at the top of the overlay (`modes/_profile.md`). Its tracks are Deployment (primary #1), Data Science (primary #2), Secondary and Adjacent. The table below is the upstream fallback, used only if the overlay is missing from the Facts Pack.
 
 | Archetype | Framing line for the candidate |
 |-----------|-------------------------------|
@@ -54,16 +60,25 @@ Cross-cutting: position the candidate as a **technical builder** — same truth,
 
 **Block B — CV Match** *(≤150 words prose)*: use the Facts Pack. Table mapping each JD requirement to the exact line text from cv.md (or i18n.ts key). Emphasis by archetype: FDE→delivery+client; SA→integrations+design; PM→discovery+metrics; LLMOps→evals+observability; Agentic→multi-agent+HITL; Transformation→change mgmt+adoption. Then **Gaps** sub-section — for each: hard-blocker vs nice-to-have, adjacent experience, portfolio coverage, mitigation plan.
 
-**Score Global** (end of Phase 1):
+**Score Global** (end of Phase 1): follow the overlay's "Scoring rubric v2" exactly.
+- **North Star:** track base + fit modifiers (startup/scaleup, growth & mentorship). State the base and each modifier in one line.
+- **CV match:** fit-to-Ben, then the seniority-gap modifier and credential-density credit. Show the calculation.
+- **Hiring timeline:** from the posting/updated date in the JD file (ATS JSON fields like `updated_at`, `publishedAt`) and the company's size and stage.
+- **Comp (preliminary):** the capped table on the likely landing base (lower third of the posted band). Undisclosed = 3. Do NOT WebSearch.
+- **Location & travel:** the overlay's location policy, including travel %.
 
-| Dimension | Score |
-|-----------|-------|
-| CV match | X/5 |
-| North Star alignment | X/5 |
-| Comp (preliminary) | X/5 |
-| Cultural signals | X/5 |
-| Red flags | -X (if any) |
-| **Global** | **X.X/5** |
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| North Star alignment | 35% | X/5 |
+| CV match | 25% | X/5 |
+| Cultural signals | 12% | X/5 |
+| Hiring timeline | 10% | X/5 |
+| Comp (preliminary) | 10% | X/5 |
+| Location & travel | 8% | X/5 |
+| Red flags | subtract | -X (if any) |
+| **Global** | | **X.X/5** |
+
+Under the table, one line of arithmetic: `0.35×NS + 0.25×CV + 0.12×Cult + 0.10×Time + 0.10×Comp + 0.08×Loc − RF = X.X`. Global is computed by this formula, not by judgment.
 
 **Legitimacy hint** (1 line): `{High Confidence | Proceed with Caution | Suspicious} — {1-line reason}`. Default Proceed with Caution. Suspicious only for clear red flags (extreme boilerplate, contradictory comp, repeat reposting >2x). High Confidence requires concrete team detail + transparent comp + no concerning signals. Phase 2 may refine this in light of Block D.
 
@@ -72,7 +87,7 @@ Cross-cutting: position the candidate as a **technical builder** — same truth,
 Write the phase-1 fragment to `{{PHASE1_FILE}}` with these exact sections, in this order — Phase 2 will splice them verbatim into the final report:
 
 ```
-<!-- PHASE1_META: {"company":"...","company_slug":"...","role":"...","archetype":"...","score":X.X,"cv_match":X,"north_star":X,"comp_prelim":X,"cultural":X,"red_flags":X,"legitimacy_hint":"tier — reason"} -->
+<!-- PHASE1_META: {"company":"...","company_slug":"...","role":"...","archetype":"...","score":X.X,"cv_match":X,"north_star":X,"comp_prelim":X,"cultural":X,"timeline":X,"location":X,"red_flags":X,"rubric":"v2","legitimacy_hint":"tier — reason"} -->
 
 ## A) Role Summary
 
@@ -106,11 +121,11 @@ Compare **Global** score to `{{TRIAGE_THRESHOLD}}`:
 
 ### Stub report (only when stub=true)
 
-**Write path (absolute, MANDATORY):** `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. Use this exact prefix — do NOT prepend `batch/`, `./`, or any other directory. The orchestrator checks for the file at `{{REPORTS_DIR}}` and will fail the offer if it's written anywhere else. ≤40 lines, ≤300 words.
+**Write path (absolute, MANDATORY):** `{{REPORTS_DIR}}/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md`. Use this exact prefix — do NOT prepend `batch/`, `./`, or any other directory. The orchestrator checks for the file at `{{REPORTS_DIR}}` and will fail the offer if it's written anywhere else. ≤50 lines, ≤300 words (tables don't count toward words).
 
 Header (one field per line):
 - `# Evaluation: {Company} — {Role}`
-- `**Date:** {{DATE}}` · `**Archetype:** {detected}` · `**Score:** {X.X}/5 (below triage threshold {{TRIAGE_THRESHOLD}} — stub report)`.
+- `**Date:** {{DATE}}` · `**Archetype:** {detected}` · `**Score:** {X.X}/5 (below triage threshold {{TRIAGE_THRESHOLD}} — stub report)` · `**Rubric:** v2`.
 - `**Legitimacy:** {tier} — {1-line reason}`.
 - `**URL:** {{URL}}` · `**PDF:** ❌ (batch — on-demand via /career-ops pdf)`.
 - `**Batch ID:** {{ID}}`.
@@ -118,6 +133,7 @@ Header (one field per line):
 Body:
 - `## A) Role Summary` (1-paragraph TL;DR).
 - `## B) CV Match (gaps)` (3-5 bullets, no cv.md quotes — gaps only).
+- `## Score Global` (the 7-row table + arithmetic line from Step 2).
 - `## Why skip` (1 sentence).
 - `## Keywords` (15 JD keywords for ATS, comma-separated).
 
@@ -151,7 +167,7 @@ On failure: same shape with `"status":"failed"`, `"score":null`, `"stub":null`, 
 
 ## Global rules
 
-**Length budget (HARD):** stub ≤300 words / ≤40 lines · Phase 1 prose ≤150 words per block. Tables don't count.
+**Length budget (HARD):** stub ≤300 words / ≤50 lines · Phase 1 prose ≤150 words per block. Tables don't count.
 
 **NEVER:** WebSearch (this is the triage pass — comp evidence belongs in Phase 2) · fabricate experience/metrics · write to cv.md/i18n.ts · include a phone in drafted outbound text · use corporate-speak ("passionate about", "leveraged", "cutting-edge") · skip writing `{{PHASE1_FILE}}` even when emitting a stub.
 
