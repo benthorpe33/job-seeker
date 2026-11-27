@@ -74,7 +74,15 @@ function validateStatus(status) {
 }
 
 function normalizeCompany(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // js-mj0: drop trailing generic suffixes so "Tenex" / "Tenex Labs",
+  // "Basis" / "Basis AI" and "HappyRobot" / "HappyRobot AI" match. Without
+  // this, re-evaluations added duplicate rows instead of updating. Only
+  // strips when something is left, so a company literally named "AI" survives.
+  const words = name.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+  while (words.length > 1 && /^(ai|labs?|inc|llc|corp|co|technologies|technology|technologies|systems|hq)$/.test(words[words.length - 1])) {
+    words.pop();
+  }
+  return words.join('');
 }
 
 // A literal `|` inside a cell value (Ramp ships titles like
@@ -177,6 +185,22 @@ function reportPostingUrl(reportRelPath) {
   }
   postingUrlCache.set(reportRelPath, url);
   return url;
+}
+
+// js-mj0: scoring rubric version of a report ("**Rubric:** v2" header; absent
+// means v1). A v2 re-evaluation must replace a v1 row even when its score is
+// lower, otherwise re-scoring can never correct an inflated v1 score.
+const rubricCache = new Map();
+function reportIsV2(reportRelPath) {
+  if (!reportRelPath) return false;
+  if (rubricCache.has(reportRelPath)) return rubricCache.get(reportRelPath);
+  let v2 = false;
+  const abs = join(CAREER_OPS, reportRelPath);
+  if (existsSync(abs)) {
+    v2 = /\*\*Rubric:\*\*\s*v2/i.test(readFileSync(abs, 'utf-8').slice(0, 4000));
+  }
+  rubricCache.set(reportRelPath, v2);
+  return v2;
 }
 
 // Integration-boundary check: before merging a TSV row into applications.md,
@@ -434,7 +458,10 @@ for (const file of tsvFiles) {
     const newScore = parseScore(addition.score);
     const oldScore = parseScore(duplicate.score);
 
-    if (newScore > oldScore) {
+    const rubricUpgrade =
+      reportIsV2(extractReportPath(addition.report)) &&
+      !reportIsV2(extractReportPath(duplicate.report));
+    if (newScore > oldScore || (rubricUpgrade && newScore !== oldScore)) {
       console.log(`🔄 Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`);
       const lineIdx = appLines.indexOf(duplicate.raw);
       if (lineIdx >= 0) {

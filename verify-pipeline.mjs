@@ -116,8 +116,25 @@ for (const e of entries) {
   if (!companyRoleMap.has(key)) companyRoleMap.set(key, []);
   companyRoleMap.get(key).push(e);
 }
+// js-mj0: same company + title can be two different reqs (WRITER "AI Engineer"
+// has two Ashby postings). Compare each entry's report **URL:** and only warn
+// when two entries point at the same posting, or when a URL can't be read.
+function reportPostingId(e) {
+  const m = e.report.match(/\(([^)]+\.md)\)/);
+  if (!m) return null;
+  const p = join(CAREER_OPS, m[1]);
+  if (!existsSync(p)) return null;
+  const u = readFileSync(p, 'utf-8').match(/\*\*URL:\*\*\s*(\S+)/);
+  if (!u) return null;
+  // ATS posting id (uuid or numeric) when present, else the URL minus query.
+  const id = u[1].match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+    || u[1].match(/\/jobs\/(\d+)/);
+  return (id ? (id[1] || id[0]) : u[1].split('?')[0]).toLowerCase();
+}
 for (const [key, group] of companyRoleMap) {
   if (group.length > 1) {
+    const ids = group.map(reportPostingId);
+    if (ids.every(Boolean) && new Set(ids).size === ids.length) continue; // distinct postings
     warn(`Possible duplicates: ${group.map(e => `#${e.num}`).join(', ')} (${group[0].company} — ${group[0].role})`);
     dupes++;
   }

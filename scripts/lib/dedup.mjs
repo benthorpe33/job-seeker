@@ -38,6 +38,18 @@ export function normalizeRole(s) {
     .trim();
 }
 
+// js-mj0: parenthetical qualifiers that distinguish two roles ("(Soccer)" vs
+// "(Basketball/Hockey)"), minus workplace/location/badge tags that don't.
+const NON_QUALIFIER_RE = /^(remote|hybrid|on[\s-]?site|onsite|verified( job)?|us|usa|u\.s\.|united states|nyc|ny|new york.*|[a-z .]+,\s*[a-z]{2})$/i;
+export function roleQualifiers(role) {
+  const out = new Set();
+  for (const m of (role || "").matchAll(/\(([^)]*)\)/g)) {
+    const q = m[1].toLowerCase().replace(/[^a-z0-9/ ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (q && !NON_QUALIFIER_RE.test(q)) out.add(q);
+  }
+  return out;
+}
+
 export function roleTokens(role) {
   return new Set(
     normalizeRole(role).split(" ").filter((t) => t.length > 2 && !STOPWORDS.has(t)),
@@ -86,6 +98,11 @@ export function looksLikeDuplicate(a, b, opts = {}) {
     ? ac === bc || ac.includes(bc) || bc.includes(ac)
     : ac === bc;
   if (!sameCompany) return false;
+  // Both roles carry a distinguishing qualifier and they differ: different
+  // postings, even though normalizeRole() erased the qualifiers.
+  const aq = roleQualifiers(a.role);
+  const bq = roleQualifiers(b.role);
+  if (aq.size && bq.size && ![...aq].some((q) => bq.has(q))) return false;
   if (normalizeRole(a.role) === normalizeRole(b.role)) return true;
   const at = roleTokens(a.role);
   const bt = roleTokens(b.role);
