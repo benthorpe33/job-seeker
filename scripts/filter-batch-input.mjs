@@ -48,8 +48,13 @@ const STATE_HEADER =
 const NYC_RE = /\b(nyc|new york|manhattan|brooklyn|queens|bronx)\b/i;
 // Lifted from scripts/audit-multilocation.mjs — require a US qualifier so
 // "Remote - EMEA" and "Remote - Brazil" don't slip through.
-const REMOTE_US_RE =
-  /\bremote\b.*\b(us|usa|united states|north america)\b|\b(us|usa|united states|north america)\b.*\bremote\b|\bremote (- )?us\b/i;
+// "U.S." needs its own branch: \b can't follow the trailing period, so
+// "Remote in the U.S." / "Remote U.S." used to fail and drop US-remote roles.
+const US_TOKEN = String.raw`(?:\b(?:us|usa|united states|north america)\b|\bu\.s\.?)`;
+const REMOTE_US_RE = new RegExp(
+  String.raw`\bremote\b.*${US_TOKEN}|${US_TOKEN}.*\bremote\b|\bremote (- )?us\b`,
+  "i",
+);
 // Used only for the role-suffix fallback. Without this list, a role like
 // "Senior - Backend Developer" would parse "Backend Developer" as a location
 // and (since it doesn't match NYC/US-remote) drop the row. Restrict role-
