@@ -1,0 +1,32 @@
+[
+ {
+  "name": "Cyera",
+  "status": "ok",
+  "nLinks": 268,
+  "nJson": 0,
+  "matches": [
+   {
+    "text": "Agentic Maturity Pulse Check",
+    "href": "https://www.cyera.com/pulse-check/agentic-maturity",
+    "src": "dom"
+   },
+   {
+    "text": "Cyera Expands Its Platform to Build Out a New Security Architecture for the Agentic Era",
+    "href": "https://www.cyera.com/press-releases/cyera-expands-its-platform-to-build-out-a-new-security-architecture-for-the-agentic-era",
+    "src": "dom"
+   },
+   {
+    "text": "Cyera Announces $400 Million Investment from Goldman Sachs to Build the Trust Layer for the Agentic Enterprise",
+    "href": "https://www.cyera.com/press-releases/cyera-announces-400-million-investment-from-goldman-sachs-to-build-the-trust-layer-for-the-agentic-enterprise",
+    "src": "dom"
+   }
+  ]
+ },
+ {
+  "name": "Whatnot",
+  "status": "ok",
+  "nLinks": 21,
+  "nJson": 0,
+  "matches": []
+ }
+]

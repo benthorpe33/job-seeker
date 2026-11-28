@@ -1,0 +1,151 @@
+list	name	domain
+next50	A Security	a.security
+next50	Act	act.security
+next50	Aegis AI Security	aegisai.com
+next50	Air	air.security
+next50	Ande	ande.ai
+next50	Arca	arcawealth.com
+next50	Arrakis Technologies	arrakistechnologies.ai
+next50	Artificial Intelligence Underwriting Company (AIUC)	aiuc.com
+next50	Baba	callbaba.com
+next50	Collate	collate.com
+next50	Conduct	conduct.ai
+next50	Corner Health	cornerhealth.com
+next50	Decade	decade.com
+next50	Dominion Dynamics	dominion-dynamics.com
+next50	Endra	endra.ai
+next50	Enigma	enigma.inc
+next50	Flai	useflai.com
+next50	Foundry Robotics	foundryrobotics.ai
+next50	Fragment	fragment.ai
+next50	Hone	hone.com
+next50	Inherent	inherentlabs.ai
+next50	Keenable.ai	keenable.ai
+next50	Light	poweredbylight.com
+next50	Melius	melius.com
+next50	Midstream Health	midstream.health
+next50	Nebex	nebex.com
+next50	Neo	neo.ai
+next50	NewCore	newcore.com
+next50	Pax	pax.ai
+next50	Pocket	heypocket.com
+next50	Poetic	poetic.com
+next50	Prosper AI	getprosper.ai
+next50	Proximal	proximal.ai
+next50	Qualitate	qualitate.io
+next50	Roadrunner	roadrunner.ai
+next50	Runlayer	runlayer.com
+next50	Straiker	straiker.ai
+next50	TAR	tar.com
+next50	Taste Labs	tastelabs.com
+next50	Telepatia	telepatia.ai
+next50	TerraFirma	terrafirma.inc
+next50	Tessera Labs	tesseralabs.ai
+next50	Tolmo	tolmo.com
+next50	Trajectory	trajectory.ai
+next50	Transfyr	transfyr.ai
+next50	Traysar Industries	traysar.com
+next50	Ultra	ultra.tech
+next50	Vals AI	vals.ai
+next50	viktor.com	viktor.com
+next50	Wafer	wafer.ai
+next50	Watchtower Labs	watchtowerlabs.ai
+lenny100	Abridge	abridge.com
+lenny100	AfterQuery	afterquery.com
+lenny100	Airbnb	airbnb.com
+lenny100	Airwallex	airwallex.com
+lenny100	Anduril	anduril.com
+lenny100	Anthropic	anthropic.com
+lenny100	Applied Compute	appliedcompute.com
+lenny100	Applied Intuition	appliedintuition.com
+lenny100	Arena	arena.ai
+lenny100	Base	basepowercompany.com
+lenny100	Baseten	baseten.co
+lenny100	Basis	getbasis.ai
+lenny100	Bedrock Robotics	bedrockrobotics.com
+lenny100	Black Forest Labs	bfl.ai
+lenny100	Chai Discovery	chaidiscovery.com
+lenny100	Chainguard	chainguard.dev
+lenny100	Clay	clay.com
+lenny100	ClickHouse	clickhouse.com
+lenny100	Cloudflare	cloudflare.com
+lenny100	Cognition	cognition.com
+lenny100	CoreWeave	coreweave.com
+lenny100	Crusoe	crusoe.ai
+lenny100	Cyera	cyera.com
+lenny100	Databricks	databricks.com
+lenny100	Decagon	decagon.ai
+lenny100	Deel	deel.com
+lenny100	ElevenLabs	elevenlabs.io
+lenny100	Etched	etched.com
+lenny100	Exa	exa.ai
+lenny100	Factory	factory.com
+lenny100	Fal	fal.ai
+lenny100	Figma	figma.com
+lenny100	Figure	figure.ai
+lenny100	Fireworks	fireworks.ai
+lenny100	Gimlet Labs	gimletlabs.ai
+lenny100	Glean	glean.com
+lenny100	Granola	granola.ai
+lenny100	Hadrian	hadrian.co
+lenny100	Handshake	joinhandshake.com
+lenny100	Harvey	harvey.ai
+lenny100	Helsing	helsing.ai
+lenny100	Hex	hex.tech
+lenny100	Kalshi	kalshi.com
+lenny100	Lambda	lambda.ai
+lenny100	Legora	legora.com
+lenny100	Linear	linear.app
+lenny100	Liquid AI	liquid.ai
+lenny100	Lovable	lovable.dev
+lenny100	Mercor	mercor.com
+lenny100	Mercury	mercury.com
+lenny100	Mistral AI	mistral.ai
+lenny100	Modal	modal.com
+lenny100	n8n	n8n.io
+lenny100	Notion	notion.com
+lenny100	NVIDIA	nvidia.com
+lenny100	OpenAI	openai.com
+lenny100	OpenEvidence	openevidence.com
+lenny100	Palantir	palantir.com
+lenny100	Parallel	parallel.ai
+lenny100	Periodic Labs	periodic.com
+lenny100	Physical Intelligence	pi.website
+lenny100	Polymarket	polymarket.com
+lenny100	PostHog	posthog.com
+lenny100	Prime Intellect	primeintellect.ai
+lenny100	Profound	tryprofound.com
+lenny100	Railway	railway.com
+lenny100	Ramp	ramp.com
+lenny100	Reflection AI	reflection.ai
+lenny100	Replit	replit.com
+lenny100	Revolut	revolut.com
+lenny100	Ricursive	ricursive.com
+lenny100	Rippling	rippling.com
+lenny100	Runway	runway.com
+lenny100	Safe Superintelligence	ssi.inc
+lenny100	Saronic	saronic.com
+lenny100	Shield AI	shield.ai
+lenny100	Shopify	shopify.com
+lenny100	Sierra	sierra.ai
+lenny100	Skild	skild.ai
+lenny100	SpaceX	spacex.com
+lenny100	Stripe	stripe.com
+lenny100	Sunday Robotics	sunday.ai
+lenny100	Suno	suno.com
+lenny100	Supabase	supabase.com
+lenny100	Surge AI	surgehq.ai
+lenny100	Temporal	temporal.io
+lenny100	Tesla	tesla.com
+lenny100	Thinking Machines	thinkingmachines.ai
+lenny100	Together	together.ai
+lenny100	turbopuffer	turbopuffer.com
+lenny100	TypeSafe AI	typesafe.ai
+lenny100	Valon	valon.ai
+lenny100	Vanta	vanta.com
+lenny100	Vercel	vercel.com
+lenny100	Waymo	waymo.com
+lenny100	Whatnot	whatnot.com
+lenny100	Wispr Flow	wisprflow.ai
+lenny100	Wonderful	wonderful.ai
+lenny100	WorkOS	workos.com

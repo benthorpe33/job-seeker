@@ -1,0 +1,343 @@
+[
+ {
+  "name": "A Security",
+  "domain": "a.security",
+  "list": "next50",
+  "pages": [
+   "https://a.security/careers",
+   "https://a.security/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Act",
+  "domain": "act.security",
+  "list": "next50",
+  "pages": [
+   "https://jobs.ashbyhq.com/act-security"
+  ],
+  "ats": [
+   "ashby:act-security"
+  ]
+ },
+ {
+  "name": "Aegis AI Security",
+  "domain": "aegisai.com",
+  "list": "next50",
+  "pages": [
+   "https://www.aegisai.com/careers",
+   "https://www.aegisai.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Anduril",
+  "domain": "anduril.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.anduril.com/careers",
+   "https://www.anduril.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Applied Compute",
+  "domain": "appliedcompute.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.appliedcompute.com/careers"
+  ],
+  "ats": [
+   "ashby:Applied%20Compute"
+  ]
+ },
+ {
+  "name": "Applied Intuition",
+  "domain": "appliedintuition.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.appliedintuition.com/careers"
+  ],
+  "ats": [
+   "ashby:applied"
+  ]
+ },
+ {
+  "name": "Arrakis Technologies",
+  "domain": "arrakistechnologies.ai",
+  "list": "next50",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Base",
+  "domain": "basepowercompany.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.basepowercompany.com/careers",
+   "https://www.basepowercompany.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Cyera",
+  "domain": "cyera.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.cyera.com/careers",
+   "https://www.cyera.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Decade",
+  "domain": "decade.com",
+  "list": "next50",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Deel",
+  "domain": "deel.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.deel.com/careers/",
+   "https://www.deel.com/careers/"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Dominion Dynamics",
+  "domain": "dominion-dynamics.com",
+  "list": "next50",
+  "pages": [
+   "https://www.defendthedominion.com/careers"
+  ],
+  "ats": [
+   "ashby:Dominion%20Dynamics"
+  ]
+ },
+ {
+  "name": "Enigma",
+  "domain": "enigma.inc",
+  "list": "next50",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Fal",
+  "domain": "fal.ai",
+  "list": "lenny100",
+  "pages": [
+   "https://fal.ai/careers",
+   "https://fal.ai/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Glean",
+  "domain": "glean.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.glean.com/careers",
+   "https://www.glean.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Hadrian",
+  "domain": "hadrian.co",
+  "list": "lenny100",
+  "pages": [
+   "https://www.hadrian.co/careers"
+  ],
+  "ats": [
+   "ashby:hadrian-automation"
+  ]
+ },
+ {
+  "name": "Mistral AI",
+  "domain": "mistral.ai",
+  "list": "lenny100",
+  "pages": [
+   "https://mistral.ai/careers/"
+  ],
+  "ats": [
+   "ashby:mistral.ai"
+  ]
+ },
+ {
+  "name": "Neo",
+  "domain": "neo.ai",
+  "list": "next50",
+  "pages": [
+   "https://www.neo.ai/careers",
+   "https://www.neo.ai/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "NewCore",
+  "domain": "newcore.com",
+  "list": "next50",
+  "pages": [
+   "https://newcore.com/careers",
+   "https://newcore.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "NVIDIA",
+  "domain": "nvidia.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.nvidia.com/en-us/about-nvidia/careers/",
+   "https://www.nvidia.com/en-us/about-nvidia/careers/"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Pax",
+  "domain": "pax.ai",
+  "list": "next50",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Proximal",
+  "domain": "proximal.ai",
+  "list": "next50",
+  "pages": [
+   "https://www.proximal.ai/careers/"
+  ],
+  "ats": [
+   "ashby:Proximal"
+  ]
+ },
+ {
+  "name": "Revolut",
+  "domain": "revolut.com",
+  "list": "lenny100",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Ricursive",
+  "domain": "ricursive.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.ricursive.com/careers"
+  ],
+  "ats": [
+   "ashby:Ricursive%20Intelligence"
+  ]
+ },
+ {
+  "name": "Rippling",
+  "domain": "rippling.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.rippling.com/careers",
+   "https://www.rippling.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Safe Superintelligence",
+  "domain": "ssi.inc",
+  "list": "lenny100",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Shopify",
+  "domain": "shopify.com",
+  "list": "lenny100",
+  "pages": [
+   "https://www.shopify.com/careers",
+   "https://www.shopify.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Skild",
+  "domain": "skild.ai",
+  "list": "lenny100",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Straiker",
+  "domain": "straiker.ai",
+  "list": "next50",
+  "pages": [
+   "https://www.straiker.ai/careers",
+   "https://www.straiker.ai/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Telepatia",
+  "domain": "telepatia.ai",
+  "list": "next50",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "TerraFirma",
+  "domain": "terrafirma.inc",
+  "list": "next50",
+  "pages": [
+   "https://terrafirma.inc/"
+  ],
+  "ats": [
+   "ashby:TerraFirma",
+   "ashby:TerraFirma-Inc"
+  ]
+ },
+ {
+  "name": "Tesla",
+  "domain": "tesla.com",
+  "list": "lenny100",
+  "pages": [],
+  "ats": []
+ },
+ {
+  "name": "Transfyr",
+  "domain": "transfyr.ai",
+  "list": "next50",
+  "pages": [
+   "https://www.transfyr.ai/careers",
+   "https://www.transfyr.ai/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "viktor.com",
+  "domain": "viktor.com",
+  "list": "next50",
+  "pages": [
+   "https://viktor.com/careers",
+   "https://viktor.com/careers"
+  ],
+  "ats": []
+ },
+ {
+  "name": "Watchtower Labs",
+  "domain": "watchtowerlabs.ai",
+  "list": "next50",
+  "pages": [
+   "https://www.watchtowerlabs.ai/careers"
+  ],
+  "ats": [
+   "ashby:watchtower-labs-inc"
+  ]
+ },
+ {
+  "name": "Whatnot",
+  "domain": "whatnot.com",
+  "list": "lenny100",
+  "pages": [],
+  "ats": []
+ }
+]

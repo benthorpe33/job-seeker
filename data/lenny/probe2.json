@@ -1,0 +1,133 @@
+{
+ "Applied Compute": [
+  {
+   "ats": "ashby",
+   "slug": "Applied%20Compute",
+   "total": 20
+  },
+  {
+   "ats": "ashby",
+   "slug": "Applied Compute",
+   "total": 20
+  }
+ ],
+ "Ricursive": [
+  {
+   "ats": "ashby",
+   "slug": "Ricursive%20Intelligence",
+   "total": 15
+  }
+ ],
+ "Act": [
+  {
+   "ats": "ashby",
+   "slug": "act-security",
+   "total": 5
+  }
+ ],
+ "Telepatia": [
+  {
+   "ats": "ashby",
+   "slug": "telepatia",
+   "total": 0
+  }
+ ],
+ "Proximal": [
+  {
+   "ats": "ashby",
+   "slug": "Proximal",
+   "total": 0
+  }
+ ],
+ "TerraFirma": [
+  {
+   "ats": "ashby",
+   "slug": "TerraFirma-Inc",
+   "total": 38
+  }
+ ],
+ "Pax": [
+  {
+   "ats": "ashby",
+   "slug": "pax-ai",
+   "total": 0
+  }
+ ],
+ "Dominion Dynamics": [
+  {
+   "ats": "ashby",
+   "slug": "Dominion%20Dynamics",
+   "total": 23
+  }
+ ],
+ "Watchtower Labs": [
+  {
+   "ats": "ashby",
+   "slug": "watchtower-labs-inc",
+   "total": 7
+  }
+ ],
+ "Anduril": [
+  {
+   "ats": "greenhouse",
+   "slug": "andurilindustries",
+   "total": 2599
+  }
+ ],
+ "Fal": [
+  {
+   "ats": "ashby",
+   "slug": "fal-ai",
+   "total": 51
+  }
+ ],
+ "Mistral AI": [
+  {
+   "ats": "ashby",
+   "slug": "mistral.ai",
+   "total": 266
+  }
+ ],
+ "Aegis AI Security": [
+  {
+   "ats": "ashby",
+   "slug": "aegis-ai",
+   "total": 24
+  }
+ ],
+ "Glean": [
+  {
+   "ats": "greenhouse",
+   "slug": "gleanwork",
+   "total": 121
+  }
+ ],
+ "Applied Intuition": [
+  {
+   "ats": "ashby",
+   "slug": "applied",
+   "total": 330
+  }
+ ],
+ "Hadrian": [
+  {
+   "ats": "ashby",
+   "slug": "hadrian-automation",
+   "total": 187
+  }
+ ],
+ "viktor.com": [
+  {
+   "ats": "ashby",
+   "slug": "viktor",
+   "total": 0
+  }
+ ],
+ "Safe Superintelligence": [
+  {
+   "ats": "ashby",
+   "slug": "ssi",
+   "total": 0
+  }
+ ]
+}

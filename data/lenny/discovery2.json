@@ -1,0 +1,261 @@
+[
+ {
+  "name": "Act",
+  "ats": "ashby",
+  "slug": "act-security",
+  "total": 5,
+  "matches": []
+ },
+ {
+  "name": "Applied Compute",
+  "ats": "ashby",
+  "slug": "Applied%20Compute",
+  "total": 20,
+  "matches": []
+ },
+ {
+  "name": "Applied Intuition",
+  "ats": "ashby",
+  "slug": "applied",
+  "total": 330,
+  "matches": []
+ },
+ {
+  "name": "Dominion Dynamics",
+  "ats": "ashby",
+  "slug": "Dominion%20Dynamics",
+  "total": 23,
+  "matches": []
+ },
+ {
+  "name": "Hadrian",
+  "ats": "ashby",
+  "slug": "hadrian-automation",
+  "total": 187,
+  "matches": []
+ },
+ {
+  "name": "Mistral AI",
+  "ats": "ashby",
+  "slug": "mistral.ai",
+  "total": 266,
+  "matches": [
+   {
+    "title": "AI Deployment Strategist - USA",
+    "url": "https://jobs.ashbyhq.com/mistral.ai/22fee4f2-f6c9-4516-a0cd-92d6aeb21a52",
+    "location": "Palo Alto | New York | San Francisco",
+    "posted": "2026-07-10T17:15:03.403+00:00",
+    "remote": "remote",
+    "comp": "",
+    "seen": false
+   },
+   {
+    "title": "Applied AI, Forward Deployed Machine Learning Engineer ",
+    "url": "https://jobs.ashbyhq.com/mistral.ai/2ec2dacd-1117-479b-a4c1-efa9df530798",
+    "location": "Palo Alto | New York | San Francisco",
+    "posted": "2026-07-10T21:21:46.080+00:00",
+    "remote": "remote",
+    "comp": "",
+    "seen": false
+   },
+   {
+    "title": "Applied Scientist",
+    "url": "https://jobs.ashbyhq.com/mistral.ai/5d15e1fe-789d-451d-8521-568906620c21",
+    "location": "Palo Alto | New York",
+    "posted": "2026-08-03T18:33:59.698+00:00",
+    "remote": "remote",
+    "comp": "",
+    "seen": false
+   }
+  ]
+ },
+ {
+  "name": "Ricursive",
+  "ats": "ashby",
+  "slug": "Ricursive%20Intelligence",
+  "total": 15,
+  "matches": []
+ },
+ {
+  "name": "TerraFirma",
+  "ats": "ashby",
+  "slug": "TerraFirma-Inc",
+  "total": 38,
+  "matches": []
+ },
+ {
+  "name": "Watchtower Labs",
+  "ats": "ashby",
+  "slug": "watchtower-labs-inc",
+  "total": 7,
+  "matches": []
+ },
+ {
+  "name": "Anduril",
+  "ats": "greenhouse",
+  "slug": "andurilindustries",
+  "total": 2599,
+  "matches": [
+   {
+    "title": "Senior ML Engineer, Computer Vision",
+    "url": "https://boards.greenhouse.io/andurilindustries/jobs/5256999007?gh_jid=5256999007",
+    "location": "Irvine, California, United States; Remote",
+    "posted": "2026-10-05T13:08:54-04:00",
+    "seen": false
+   }
+  ]
+ },
+ {
+  "name": "Glean",
+  "ats": "greenhouse",
+  "slug": "gleanwork",
+  "total": 121,
+  "matches": [
+   {
+    "title": "Enterprise Solutions Engineer, East",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4755859005",
+    "location": "Remote - US",
+    "posted": "2026-11-18T15:34:49-05:00",
+    "seen": false
+   },
+   {
+    "title": "Enterprise Solutions Engineer, Texas",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4755877005",
+    "location": "Remote - US",
+    "posted": "2026-11-18T15:50:24-05:00",
+    "seen": false
+   },
+   {
+    "title": "Founding Forward Deployed Engineer",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4659412005",
+    "location": "New York, NY",
+    "posted": "2026-02-09T13:18:17-05:00",
+    "seen": false
+   },
+   {
+    "title": "Founding Forward Deployed Engineer",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4651991005",
+    "location": "Remote - US",
+    "posted": "2026-01-21T14:55:53-05:00",
+    "seen": true
+   },
+   {
+    "title": "Resident Solutions Architect ",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4717716005",
+    "location": "Remote - US",
+    "posted": "2026-07-23T10:06:25-04:00",
+    "seen": true
+   },
+   {
+    "title": "Solutions Architect ",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4508312005",
+    "location": "Remote - US",
+    "posted": "2024-12-12T17:48:27-05:00",
+    "seen": true
+   },
+   {
+    "title": "Solutions Engineer, Canada",
+    "url": "https://job-boards.greenhouse.io/gleanwork/jobs/4749825005",
+    "location": "Remote - Canada",
+    "posted": "2026-11-02T17:51:44-05:00",
+    "seen": false
+   }
+  ]
+ },
+ {
+  "name": "Fal",
+  "ats": "ashby",
+  "slug": "fal-ai",
+  "total": 51,
+  "matches": []
+ },
+ {
+  "name": "Aegis AI Security",
+  "ats": "ashby",
+  "slug": "aegis-ai",
+  "total": 24,
+  "matches": [
+   {
+    "title": "AI Engineer - NYC",
+    "url": "https://jobs.ashbyhq.com/aegis-ai/dcfcdd5e-968c-4920-92ec-592225c0234b",
+    "location": "New York City",
+    "posted": "2025-09-10T00:48:42.390+00:00",
+    "remote": "OnSite",
+    "comp": "",
+    "seen": false
+   },
+   {
+    "title": "Customer Engineer/Solutions Engineer",
+    "url": "https://jobs.ashbyhq.com/aegis-ai/c5f07542-1fef-4911-b1ae-39df51012605",
+    "location": "United States | New York City | United States | San Francisco",
+    "posted": "2026-09-15T22:15:49.879+00:00",
+    "remote": "remote",
+    "comp": "",
+    "seen": false
+   }
+  ]
+ },
+ {
+  "name": "Skild",
+  "ats": "greenhouse",
+  "slug": "skildai-careers",
+  "total": 58,
+  "matches": []
+ },
+ {
+  "name": "Rippling",
+  "ats": "rippling",
+  "slug": "rippling",
+  "total": 735,
+  "matches": [
+   {
+    "title": "AI Deployment Lead ",
+    "url": "https://ats.rippling.com/rippling/jobs/bc0bf386-e53a-446f-b78a-ab10a79655dc",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Data Scientist, Strategic Finance",
+    "url": "https://ats.rippling.com/rippling/jobs/75ca1554-7a93-4c72-9842-aaca854c5bf6",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Senior Machine Learning Engineer - AI Cloud",
+    "url": "https://ats.rippling.com/rippling/jobs/5c093fad-110e-4046-a72b-ec1ac318975a",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Senior Software Engineer, Backend Full Stack - Emerging Products",
+    "url": "https://ats.rippling.com/rippling/jobs/9079e455-c68e-49a7-86bb-706a6f52484a",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Software Engineer II, Backend Full Stack - Emerging Products",
+    "url": "https://ats.rippling.com/rippling/jobs/9f4fa14f-0317-4bbd-859a-b8d7b5714247",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Staff Full Stack Engineer (Frontend) - Time Products",
+    "url": "https://ats.rippling.com/rippling/jobs/4352b096-ed73-41a6-ae6c-a06301c36718",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Staff Full Stack Software Engineer (Backend) - Scheduling",
+    "url": "https://ats.rippling.com/rippling/jobs/e3e24ff1-9914-4234-af7f-a4938a64bb21",
+    "location": "New York, NY",
+    "seen": false
+   },
+   {
+    "title": "Staff Full Stack Software Engineer (Backend) - Transition & Termination",
+    "url": "https://ats.rippling.com/rippling/jobs/1ef152ba-8560-4465-8f9f-d60f20b4cae5",
+    "location": "New York, NY",
+    "seen": false
+   }
+  ]
+ }
+]
